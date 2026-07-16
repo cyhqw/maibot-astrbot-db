@@ -46,15 +46,30 @@ from maikb.webui import WebServer
 # 配置模型
 # ----------------------------------------------------------------------
 
+CONFIG_VERSION = "1.0.0"
+
+
+class PluginSectionConfig(PluginConfigBase):
+    """[plugin] 节配置（MaiBot SDK 要求的必需节）。"""
+
+    __ui_label__: ClassVar[str] = "插件设置"
+    __ui_order__: ClassVar[int] = 0
+
+    enabled: bool = Field(default=True, description="是否启用插件")
+    config_version: str = Field(
+        default=CONFIG_VERSION,
+        description="配置结构版本（系统管理，请勿手动修改）",
+        json_schema_extra={"disabled": True, "hidden": True},
+    )
+
+
 class DatabaseSectionConfig(PluginConfigBase):
     """数据库基础配置。"""
 
     __ui_label__: ClassVar[str] = "数据库"
     __ui_icon__: ClassVar[str] = "database"
-    __ui_order__: ClassVar[int] = 0
+    __ui_order__: ClassVar[int] = 1
 
-    config_version: str = Field(default="1.0.0", description="配置版本号")
-    enabled: bool = Field(default=True, description="是否启用数据库插件")
     db_filename: str = Field(
         default="maikb.db",
         description="数据库文件名（保存在插件 data_dir 下）",
@@ -193,6 +208,7 @@ class WebUISectionConfig(PluginConfigBase):
 class MaiKBConfig(PluginConfigBase):
     """MaiBot 知识库插件配置。"""
 
+    plugin: PluginSectionConfig = Field(default_factory=PluginSectionConfig)
     database: DatabaseSectionConfig = Field(default_factory=DatabaseSectionConfig)
     knowledge_base: KnowledgeBaseSectionConfig = Field(default_factory=KnowledgeBaseSectionConfig)
     interceptor: InterceptorSectionConfig = Field(default_factory=InterceptorSectionConfig)
@@ -217,10 +233,11 @@ class MaiKBPlugin(MaiBotPlugin, KbApiMixin, InterceptorMixin, InjectorMixin):
     async def on_load(self) -> None:
         """插件加载：初始化数据库 + KB + 拦截器 + 注入器 + Web UI。"""
 
-        cfg = self.config.database
-        if not cfg.enabled:
-            self.ctx.logger.warning("MaiBot 知识库已被禁用（database.enabled=false）")
+        if not self.config.plugin.enabled:
+            self.ctx.logger.warning("MaiBot 知识库已被禁用（plugin.enabled=false）")
             return
+
+        cfg = self.config.database
 
         # 数据库路径：使用 MaiBot 分配给插件的 data_dir
         db_path = self.ctx.paths.data_dir / cfg.db_filename

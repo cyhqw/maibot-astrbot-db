@@ -83,11 +83,11 @@ async def test_end_to_end_kv_via_api(tmp_path):
 
     # 注入配置
     p._plugin_config_data = {
-        "database": {"enabled": True, "db_filename": "test_e2e.db", "config_version": "1.0.0", "auto_backup_on_start": False},
-        "admin": {"admin_users": [], "config_version": "1.0.0"},
+        "plugin": {"enabled": True, "config_version": "1.0.0"},
+        "database": {"db_filename": "test_e2e.db", "auto_backup_on_start": False},
         # 集成测试聚焦 DB/KV/对话；关闭 KB 与 Web UI 避免起 dummy embedder 与固定端口 server
-        "knowledge_base": {"enabled": False, "config_version": "1.0.0"},
-        "webui": {"enabled": False, "config_version": "1.0.0"},
+        "knowledge_base": {"enabled": False},
+        "webui": {"enabled": False},
     }
     p._plugin_config_instance = plugin_module.MaiKBConfig(**p._plugin_config_data)
 
@@ -165,10 +165,10 @@ async def test_end_to_end_conversation_via_api(tmp_path):
 
     p = plugin_module.MaiKBPlugin()
     p._plugin_config_data = {
-        "database": {"enabled": True, "db_filename": "test_e2e_conv.db", "config_version": "1.0.0", "auto_backup_on_start": False},
-        "admin": {"admin_users": [], "config_version": "1.0.0"},
-        "knowledge_base": {"enabled": False, "config_version": "1.0.0"},
-        "webui": {"enabled": False, "config_version": "1.0.0"},
+        "plugin": {"enabled": True, "config_version": "1.0.0"},
+        "database": {"db_filename": "test_e2e_conv.db", "auto_backup_on_start": False},
+        "knowledge_base": {"enabled": False},
+        "webui": {"enabled": False},
     }
     p._plugin_config_instance = plugin_module.MaiKBConfig(**p._plugin_config_data)
 
@@ -240,10 +240,10 @@ async def test_end_to_end_message_history(tmp_path):
 
     p = plugin_module.MaiKBPlugin()
     p._plugin_config_data = {
-        "database": {"enabled": True, "db_filename": "test_e2e_msg.db", "config_version": "1.0.0", "auto_backup_on_start": False},
-        "admin": {"admin_users": [], "config_version": "1.0.0"},
-        "knowledge_base": {"enabled": False, "config_version": "1.0.0"},
-        "webui": {"enabled": False, "config_version": "1.0.0"},
+        "plugin": {"enabled": True, "config_version": "1.0.0"},
+        "database": {"db_filename": "test_e2e_msg.db", "auto_backup_on_start": False},
+        "knowledge_base": {"enabled": False},
+        "webui": {"enabled": False},
     }
     p._plugin_config_instance = plugin_module.MaiKBConfig(**p._plugin_config_data)
 

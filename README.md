@@ -78,6 +78,7 @@ default_category = "genshin"  # 给文件打分类标签
 
 | 段 | 作用 |
 |---|---|
+| `[plugin]` | 插件开关、配置版本（系统管理） |
 | `[database]` | 数据库文件名、自动备份 |
 | `[knowledge_base]` | 切分参数、embedding 配置、分类标签 |
 | `[interceptor]` | 前缀拦截开关与列表 |
