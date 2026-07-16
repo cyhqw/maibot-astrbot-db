@@ -28,7 +28,10 @@ from astrdb import (
     get_sp,
     init_db,
 )
+from astrdb.interceptor import InterceptorMixin
+from astrdb.injector import InjectorMixin
 from astrdb.kb.api import KbApiMixin, close_kb, init_kb, load_kb_index
+from astrdb.webui import WebServer
 
 
 # ----------------------------------------------------------------------
@@ -115,19 +118,99 @@ class KnowledgeBaseSectionConfig(PluginConfigBase):
     )
 
 
+class InterceptorSectionConfig(PluginConfigBase):
+    """消息前缀拦截器配置。"""
+
+    __ui_label__: ClassVar[str] = "消息拦截"
+    __ui_icon__: ClassVar[str] = "shield"
+    __ui_order__: ClassVar[int] = 3
+
+    enabled: bool = Field(default=True, description="是否启用前缀拦截")
+    prefixes: List[str] = Field(
+        default_factory=lambda: ["/", "[", "#"],
+        description="触发拦截的前缀字符列表；命中后消息不记录、不回复",
+    )
+    log_blocked: bool = Field(
+        default=True,
+        description="是否在日志中记录被拦截的消息（前 60 字预览）",
+    )
+
+
+class InjectorSectionConfig(PluginConfigBase):
+    """自动召回 + 注入器配置。"""
+
+    __ui_label__: ClassVar[str] = "自动注入"
+    __ui_icon__: ClassVar[str] = "zap"
+    __ui_order__: ClassVar[int] = 4
+
+    enabled: bool = Field(
+        default=True,
+        description="是否启用自动召回；启用后在 LLM 调用前自动检索知识库并注入相关内容",
+    )
+    min_score: float = Field(
+        default=0.01,
+        description="RRF 融合分数阈值，低于此值不注入",
+    )
+    min_vector_score: float = Field(
+        default=0.3,
+        description="向量相似度阈值；同时低于此值且 BM25=0 的不注入",
+    )
+    top_k: int = Field(
+        default=3,
+        description="注入几条检索结果",
+    )
+    max_chars: int = Field(
+        default=2000,
+        description="注入文本最大字符数（超出会截断）",
+    )
+    dedup_lookback: int = Field(
+        default=6,
+        description="检查最近 N 条消息避免与 LLM 主动调 tool 重复",
+    )
+    skip_if_tool_called: bool = Field(
+        default=True,
+        description="LLM 已调过 knowledge_search tool 时跳过自动注入",
+    )
+
+
+class WebUISectionConfig(PluginConfigBase):
+    """Web 管理界面配置。"""
+
+    __ui_label__: ClassVar[str] = "Web UI"
+    __ui_icon__: ClassVar[str] = "globe"
+    __ui_order__: ClassVar[int] = 5
+
+    enabled: bool = Field(default=True, description="是否启动 Web 管理界面")
+    host: str = Field(
+        default="127.0.0.1",
+        description="监听地址；127.0.0.1 只本机访问，0.0.0.0 允许外部",
+    )
+    port: int = Field(
+        default=8765,
+        description="监听端口；避开 MaiBot WebUI 默认的 8001",
+    )
+    token: str = Field(
+        default="",
+        description="访问令牌；留空则无认证（仅本机调试用）",
+    )
+
+
 class AstrBotDbConfig(PluginConfigBase):
     """AstrBot 数据库移植插件配置。"""
 
     database: DatabaseSectionConfig = Field(default_factory=DatabaseSectionConfig)
     admin: AdminSectionConfig = Field(default_factory=AdminSectionConfig)
     knowledge_base: KnowledgeBaseSectionConfig = Field(default_factory=KnowledgeBaseSectionConfig)
+    interceptor: InterceptorSectionConfig = Field(default_factory=InterceptorSectionConfig)
+    injector: InjectorSectionConfig = Field(default_factory=InjectorSectionConfig)
+    webui: WebUISectionConfig = Field(default_factory=WebUISectionConfig)
 
 
 # ----------------------------------------------------------------------
 # 插件主类
 # ----------------------------------------------------------------------
 
-class AstrBotDbPlugin(MaiBotPlugin, KbApiMixin):
+class AstrBotDbPlugin(MaiBotPlugin, KbApiMixin, InterceptorMixin, InjectorMixin):
     """AstrBot 数据库移植插件。"""
 
     config_model = AstrBotDbConfig
@@ -135,9 +218,10 @@ class AstrBotDbPlugin(MaiBotPlugin, KbApiMixin):
     # 保存最近一次初始化的 db 路径，用于诊断
     _db_path: Path | None = None
     _kb_dir: Path | None = None
+    _web_server: WebServer | None = None
 
     async def on_load(self) -> None:
-        """插件加载：初始化数据库 + KB。"""
+        """插件加载：初始化数据库 + KB + 拦截器 + 注入器 + Web UI。"""
 
         cfg = self.config.database
         if not cfg.enabled:
@@ -166,6 +250,44 @@ class AstrBotDbPlugin(MaiBotPlugin, KbApiMixin):
             await self._init_kb(kb_cfg)
         else:
             self.ctx.logger.info("知识库模块已禁用（knowledge_base.enabled=false）")
+
+        # 拦截器（通过 @HookHandler 自动注册，这里只做日志）
+        interceptor_cfg = self.config.interceptor
+        if interceptor_cfg.enabled:
+            self.ctx.logger.info(
+                f"前缀拦截器已启用: prefixes={interceptor_cfg.prefixes}"
+            )
+
+        # 注入器
+        injector_cfg = self.config.injector
+        if injector_cfg.enabled:
+            self.ctx.logger.info(
+                f"自动召回+注入器已启用: top_k={injector_cfg.top_k} "
+                f"min_score={injector_cfg.min_score}"
+            )
+
+        # Web UI
+        webui_cfg = self.config.webui
+        if webui_cfg.enabled:
+            await self._start_web_ui(webui_cfg)
+
+    async def _start_web_ui(self, webui_cfg: WebUISectionConfig) -> None:
+        """启动 Web 管理 server。"""
+
+        self._web_server = WebServer(
+            plugin=self,
+            host=webui_cfg.host,
+            port=webui_cfg.port,
+            token=webui_cfg.token,
+        )
+        try:
+            await self._web_server.start()
+            self.ctx.logger.info(
+                f"Web UI 已启动: http://{webui_cfg.host}:{webui_cfg.port}"
+            )
+        except Exception as exc:
+            self.ctx.logger.error(f"Web UI 启动失败: {exc}", exc_info=True)
+            self._web_server = None
 
     async def _init_kb(self, kb_cfg: KnowledgeBaseSectionConfig) -> None:
         """初始化知识库模块。"""
@@ -223,11 +345,14 @@ class AstrBotDbPlugin(MaiBotPlugin, KbApiMixin):
                         self.ctx.logger.error(f"  导入失败 {fp}: {err}")
 
     async def on_unload(self) -> None:
-        """插件卸载：关闭数据库引擎 + KB。"""
+        """插件卸载：关闭 Web UI + KB + 数据库。"""
 
+        if self._web_server is not None:
+            await self._web_server.stop()
+            self._web_server = None
         close_kb()
         await close_db()
-        self.ctx.logger.info("AstrBot 数据库与 KB 已关闭")
+        self.ctx.logger.info("AstrBot 数据库、KB 与 Web UI 已关闭")
 
     async def on_config_update(
         self, scope: str, config_data: dict[str, Any], version: str

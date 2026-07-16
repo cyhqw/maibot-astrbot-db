@@ -1,5 +1,119 @@
 # Changelog
 
+## 3.0.0 (2026-07-16)
+
+**重大升级**：补齐召回与注入机制、消息前缀拦截、Web 管理界面三大功能，全面完善插件可用性。
+
+### 新增功能
+
+#### 1. 消息前缀拦截器 `astrdb/interceptor.py`
+
+通过 MaiBot Hook 机制实现"不记录、不回复"的消息拦截。
+
+- 注册 `@HookHandler("chat.receive.before_process", mode=BLOCKING, order=EARLY)`
+- 命中前缀时返回 `{"action": "abort"}`，主链路直接 return
+- 拦截后消息不进 chat_manager、不进 message_repository、A_memorix 也读不到
+- 默认前缀：`/` `[` `#`
+- 可配置前缀列表，支持长短前缀优先匹配（`!!` 优先于 `!`）
+- 可配置是否记录被拦截消息的预览（前 60 字）
+
+配置：
+```toml
+[interceptor]
+enabled = true
+prefixes = ["/", "[", "#"]
+log_blocked = true
+```
+
+#### 2. 自动召回 + 注入器 `astrdb/injector.py`
+
+在 LLM 调用前自动检索知识库并注入到 prompt，与 A_memorix 兼容。
+
+- 注册 `@HookHandler("maisaka.planner.before_request", mode=BLOCKING)`
+- 在 planner 构造完 messages 之后、调 LLM 之前触发
+- 自动提取最后一条 user 消息作为 query
+- 检索知识库，命中高置信度结果时作为新 user message append 到 messages
+- **去重逻辑**：检查最近 N 条消息是否有 `knowledge_search` tool 调用，有则跳过（避免与 LLM 主动调重复）
+- 与 A_memorix 的 heuristic_injector 互不冲突（两者各自追加 user message）
+
+配置：
+```toml
+[injector]
+enabled = true
+min_score = 0.01           # RRF 融合分数阈值
+min_vector_score = 0.3     # 向量相似度阈值
+top_k = 3                  # 注入几条
+max_chars = 2000           # 注入文本最大字符数
+dedup_lookback = 6         # 去重检查的消息数
+skip_if_tool_called = true # LLM 已调过 tool 时跳过
+```
+
+#### 3. Web 管理界面 `astrdb/webui/server.py`
+
+独立的 FastAPI + uvicorn Web server，提供完整的知识库管理界面。
+
+**端点**：
+- `GET /` — SPA HTML 页面（嵌入式前端，无需分发多文件）
+- `GET /api/stats` — 知识库统计
+- `GET /api/files` — 文件列表（支持 status/category 过滤）
+- `GET /api/files/{file_id}/chunks` — 查看某文件的切片详情
+- `POST /api/search` — 检索测试（支持混合/向量/BM25 三种模式）
+- `POST /api/ingest` — 触发增量导入
+- `POST /api/rebuild` — 强制全量重建
+- `GET /api/config` — 读取当前配置
+- `PUT /api/config` — 更新配置（写 config.toml，触发 FileWatcher 热重载）
+
+**前端功能**：
+- 📊 统计面板：文件数、chunks 数、tokens、大小、embedding 模型
+- 📁 文件面板：文件列表 + 状态过滤 + 切片查看
+- 🔍 检索测试：实时查询，显示分数、来源、章节路径
+- ⚙️ 配置面板：JSON 编辑器，保存后自动热重载
+
+**安全**：
+- 默认监听 127.0.0.1（只本机访问）
+- 可配置 token 认证（Bearer token）
+- 端口可配置（默认 8765，避开 MaiBot WebUI 的 8001）
+
+配置：
+```toml
+[webui]
+enabled = true
+host = "127.0.0.1"
+port = 8765
+token = ""  # 留空则无认证
+```
+
+### A_memorix 兼容性
+
+本插件与 MaiBot 自带的 A_memorix 记忆系统**完全兼容，互不冲突**：
+
+| 维度 | A_memorix | 本插件 KB |
+|---|---|---|
+| 数据来源 | 聊天摘要、人物画像 | 用户导入的文档 |
+| 存储 | MaiBot 主库 + FAISS | 独立 SQLite + numpy |
+| 检索 | chat_scope 隔离 | 全局可见 |
+| 注入点 | `_build_planner_injected_user_messages` | `maisaka.planner.before_request` Hook |
+| 注入方式 | heuristic user message | 自动召回的 user message |
+| 冲突 | 无（两者各自追加 user message） | 无 |
+
+启动时若检测到 A_memorix 启用，本插件的自动注入器会智能去重，避免与 LLM 主动调 `knowledge_search` tool 重复。
+
+### 测试
+
+- **74 个 pytest 测试全部通过**（47 原有 + 27 新增）
+  - test_interceptor.py — 前缀拦截器（8 个测试）
+  - test_injector.py — 自动注入器（8 个测试）
+  - test_webui.py — Web UI 端到端（7 个测试，含 token 认证）
+
+### 依赖
+
+新增：
+- `fastapi >= 0.100.0` — Web 框架
+- `uvicorn >= 0.23.0` — ASGI server
+- `tomlkit >= 0.12.0` — 配置文件读写（保留注释）
+
+---
+
 ## 2.0.0 (2026-07-16)
 
 **重大升级**：新增独立的知识库 RAG 模块 — 通用文本（小说/游戏/世界观设定）向量化作为 LLM 外置知识库。

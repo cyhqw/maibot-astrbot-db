@@ -1,22 +1,28 @@
 # MaiBot AstrBot DB Port Plugin
 
-把 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的数据库设计**整体移植**到 MaiBot 插件运行时，并扩展了独立的 **知识库 RAG 模块**（通用文本向量化作为 LLM 外置知识库）。
+把 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的数据库设计**整体移植**到 MaiBot 插件运行时，并扩展了独立的 **知识库 RAG 模块**（通用文本向量化作为 LLM 外置知识库）、**消息前缀拦截器**、**自动召回注入器**、**Web 管理界面**。
 
 > 解决的核心痛点：
 >
 > 1. **MaiBot 插件 SDK 无存储抽象** — 只允许插件通过 `self.ctx.db.*` 操作 host 预定义的 22 张表，不允许注册自己的表。本插件用 AstrBot 经过生产验证的方案（SQLModel + 异步 DAO + 万能 KV 表）作为独立 SQLite 文件填这个空缺。
 >
 > 2. **A_memorix 不适合做结构化知识库** — 它是为聊天机器人记忆设计的：滑动窗口硬切、LLM 自由抽取关系导致混乱、`chat_scope` 过滤让脚本导入的内容对所有聊天不可见。本插件的 KB 模块完全重写：按 markdown 标题语义切分、不抽取关系只存原文、混合检索（向量 + BM25 + RRF）。
+>
+> 3. **召回与注入不完整** — 仅靠 LLM Tool 被动调用不够，需要自动召回 + 注入到 prompt。本插件通过 `maisaka.planner.before_request` Hook 实现，且与 A_memorix 互不冲突。
+>
+> 4. **无法拦截特定消息** — MaiBot 原生无前缀拦截能力。本插件通过 `chat.receive.before_process` Hook 实现，命中前缀的消息不记录、不回复、不进 A_memorix。
+>
+> 5. **无管理界面** — MaiBot WebUI 不允许插件扩展路由。本插件起独立 FastAPI server 提供完整管理 GUI。
 
-## 两个核心模块
+## 五个核心模块
 
 ### 模块一：AstrBot 数据库移植（v1.0）
 
-- 18 张表（含 `conversations` / `preferences` 万能 KV / `personas` / `cron_jobs` 等）
+- 20 张表（含 `conversations` / `preferences` 万能 KV / `personas` / `cron_jobs` / `kb_files` / `kb_chunks` 等）
 - 异步 DAO + 三层 KV API + 自研幂等迁移
 - 15 个 `@API` 供其他插件调用
 
-### 模块二：知识库 RAG（v2.0 新增）★
+### 模块二：知识库 RAG（v2.0）★
 
 把任意 markdown / txt 文档（小说、游戏设定、世界观、技术文档）向量化，作为 LLM 的外置知识库。
 
@@ -27,7 +33,36 @@
 - **增量更新**：基于 `file_hash` 自动跳过未变更文件
 - **多种 embedding 后端**：MaiBot 自带 / OpenAI 兼容 / 哑元（测试）
 
-> **真实知识库验证**：用 55 个原神设定文件（982 KB）测试，全部成功导入为 1211 个 chunks，12 个测试查询（"法涅斯"/"尼伯龙根"/"世界树"/"降临者"/"桑多涅"等）全部能检索到相关段落。详见 [验证脚本](tests/verify_genshin_kb.py)
+### 模块三：消息前缀拦截器（v3.0 新增）
+
+通过 `@HookHandler("chat.receive.before_process")` 实现消息拦截。
+
+- 命中前缀（默认 `/` `[` `#`）的消息直接 abort，不记录、不回复
+- 拦截后 A_memorix 也读不到这条消息（在它介入前就拦掉了）
+- 可配置前缀列表，支持长短前缀优先匹配
+- 可配置是否记录拦截日志
+
+### 模块四：自动召回 + 注入器（v3.0 新增）★
+
+通过 `@HookHandler("maisaka.planner.before_request")` 在 LLM 调用前自动注入知识库参考。
+
+- 自动提取最后一条 user 消息作为 query
+- 检索知识库，命中高置信度结果时作为 user message 追加到 prompt
+- **去重逻辑**：LLM 已调过 `knowledge_search` tool 时跳过，避免重复
+- **与 A_memorix 兼容**：两者各自追加 user message，互不覆盖
+- 可配置 RRF 分数阈值、向量相似度阈值、top_k、最大注入字符数
+
+### 模块五：Web 管理界面（v3.0 新增）★
+
+独立的 FastAPI + uvicorn Web server，提供完整管理 GUI。
+
+- **📊 统计面板**：文件数、chunks、tokens、大小、embedding 模型
+- **📁 文件面板**：列表 + 状态过滤 + 切片详情查看
+- **🔍 检索测试**：实时查询，显示分数、来源、章节路径
+- **⚙️ 配置面板**：JSON 编辑器，保存后自动热重载
+- 默认监听 `127.0.0.1:8765`，可配置 token 认证
+
+> **真实知识库验证**：用 55 个原神设定文件（982 KB）测试，全部成功导入为 1211 个 chunks，12 个测试查询（"法涅斯"/"尼伯龙根"/"世界树"/"降临者"/"桑多涅"等）全部能检索到相关段落。Web UI 实测可正常显示统计、查看切片、检索测试。详见 [验证脚本](tests/verify_genshin_kb.py)
 
 ## 设计来源
 
@@ -41,42 +76,55 @@
 
 ## 功能概览
 
-- ✅ **18 张表**（移植自 AstrBot 17 张 + 自增 1 个迁移标记），完整 SQLModel 定义
+- ✅ **20 张表**（移植自 AstrBot 17 张 + KB 2 张 + 自增 1 个迁移标记），完整 SQLModel 定义
 - ✅ **异步 DAO**：基于 SQLAlchemy[asyncio] + aiosqlite，单文件 SQLite + WAL + 完整 PRAGMA 调优
 - ✅ **三层 KV**：`global` / `umo`(会话级) / `plugin`(插件私有) 三个 scope，自动 upsert
 - ✅ **自研迁移**：装饰器注册迁移函数，幂等执行，迁移状态存到 preferences 表自身
-- ✅ **15 个公开 API**：通过 `self.ctx.api.call('astrdb.kv.put', ...)` 供其他插件调用
+- ✅ **24 个公开 API**：通过 `self.ctx.api.call('astrdb.kv.put', ...)` 供其他插件调用
+- ✅ **2 个 Hook 处理器**：消息前缀拦截 + 自动召回注入
+- ✅ **1 个 LLM Tool** `knowledge_search`：让 Bot 在对话中主动检索知识库
 - ✅ **管理命令** `/adb`：stats / tables / backup / export
+- ✅ **Web 管理界面**：独立 FastAPI server，含统计/文件/检索/配置 4 个面板
 - ✅ **AstrBot 数据导入器**：一键从 `data_v4.db` 迁移历史数据
-- ✅ **27 个单元测试 + 集成测试**：覆盖 CRUD / KV 三层 scope / 迁移幂等 / API 端到端调用
+- ✅ **74 个单元测试 + 集成测试**：覆盖 CRUD / KV / 迁移 / KB / 拦截器 / 注入器 / Web UI 端到端
 
 ## 目录结构
 
 ```
 maibot-astrbot-db/
 ├── _manifest.json          # MaiBot 插件清单
-├── plugin.py               # 插件入口：on_load/on_unload/@API/@Command
-├── requirements.txt        # 依赖：sqlmodel + aiosqlite + sqlalchemy
+├── plugin.py               # 插件入口：on_load/on_unload + 5 个 Mixin 集成
+├── requirements.txt        # 依赖
 ├── pytest.ini              # 测试配置
-├── astrdb/                 # 核心数据库模块
+├── astrdb/                 # 核心数据库 + KB + 拦截器 + 注入器 + Web UI
 │   ├── __init__.py         # 全局单例 init_db/get_db/sp
-│   ├── models.py           # 18 张 SQLModel 表定义
+│   ├── models.py           # 20 张 SQLModel 表定义
 │   ├── database.py         # AstrBotDatabase 异步 DAO 类
 │   ├── preferences.py      # SharedPreferences 三层 KV
-│   └── migrations/
-│       ├── __init__.py
-│       └── manager.py      # 迁移注册与执行
-├── commands/               # 命令处理（占位，实际在 plugin.py）
+│   ├── interceptor.py      # ★ 消息前缀拦截器 (HookHandler)
+│   ├── injector.py         # ★ 自动召回+注入器 (HookHandler)
+│   ├── migrations/
+│   │   └── manager.py      # 迁移注册与执行
+│   ├── kb/                 # ★ 知识库 RAG 模块
+│   │   ├── chunker.py      # markdown 语义切分
+│   │   ├── embedder.py     # embedding 抽象层
+│   │   ├── vector_store.py # numpy 向量索引
+│   │   ├── search.py       # 混合检索 + RRF
+│   │   ├── importer.py     # 批量导入
+│   │   └── api.py          # 8 个 KB API + LLM Tool
+│   └── webui/              # ★ Web 管理界面
+│       └── server.py       # FastAPI + 嵌入式 HTML 前端
 ├── importers/
 │   └── astrbot_importer.py # 从 AstrBot data_v4.db 导入
-└── tests/                  # 27 个 pytest 测试
+└── tests/                  # 74 个 pytest 测试
     ├── conftest.py
-    ├── test_models.py
-    ├── test_kv.py
-    ├── test_conversations.py
-    ├── test_migrations.py
-    ├── test_stats.py
-    └── test_integration.py
+    ├── test_models.py / test_kv.py / test_conversations.py
+    ├── test_migrations.py / test_stats.py / test_integration.py
+    ├── test_kb.py / test_kb_chunker.py
+    ├── test_interceptor.py     # 拦截器测试
+    ├── test_injector.py        # 注入器测试
+    ├── test_webui.py           # Web UI 端到端测试
+    └── verify_genshin_kb.py    # 真实知识库验证脚本
 ```
 
 ## 安装
