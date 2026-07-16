@@ -23,8 +23,6 @@ plugin.py                  插件入口，组合所有 Mixin
 │   │   └── api.py         9 个 KB API + LLM Tool
 │   └── webui/
 │       └── server.py      FastAPI Web 管理界面
-├── importers/
-│   └── astrbot_importer.py  从 AstrBot data_v4.db 导入
 └── tests/                 74 个测试 + maibot_sdk 桩
 ```
 
@@ -222,15 +220,3 @@ pytest -v
 ```
 
 `tests/_sdk_stub/` 提供 `maibot_sdk` 最小化桩，`conftest.py` 优先用真实 SDK、缺失时自动回退。74 个测试覆盖：模型 / KV / 对话 / 迁移 / 统计 / KB 切分 / KB 检索 / 拦截器 / 注入器 / Web UI 端到端 / 集成测试。
-
-## 从 AstrBot 导入
-
-```bash
-python -m importers.astrbot_importer \
-    --src /path/to/AstrBot/data/data_v4.db \
-    --dst /path/to/MaiBot/data/plugins/maibot-team.maikb/maikb.db
-```
-
-支持表：`platform_stats`、`provider_stats`、`conversations`、`persona_folders`、`personas`、`cron_jobs`、`preferences`、`platform_message_history`、`webchat_threads`、`platform_sessions`、`umo_aliases`、`attachments`、`command_configs`、`command_conflicts`。
-
-字段对齐策略：源库可能缺本插件新增列，按交集导入；自增主键跳过避免冲突。

@@ -83,8 +83,7 @@ def list_registered_migrations() -> list[str]:
 # 内置迁移：从 AstrBot v3 数据库导入
 # ======================================================================
 
-# 这个迁移是空操作 — 真正的导入由 importers/astrbot_importer.py 单独脚本完成。
-# 但我们仍然注册一个标记，确保未来 schema 变更时有清晰的版本路径。
+# 这个迁移是空操作，仅保留版本标记，确保未来 schema 变更时有清晰的版本路径。
 
 @register_migration("initial_schema_v1")
 async def _migrate_initial_schema_v1(db: MaiKBDatabase) -> None:
