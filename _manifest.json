@@ -1,0 +1,43 @@
+{
+  "manifest_version": 2,
+  "version": "1.0.0",
+  "name": "AstrBot 数据库移植 (AstrBot Database Port)",
+  "description": "把 AstrBot 的数据库设计（SQLModel + 异步 DAO + 万能 KV 表 + 自研迁移）整体移植到 MaiBot 插件运行时，提供隔离的、schema 友好的存储抽象。",
+  "author": {
+    "name": "MaiBot Community",
+    "url": "https://github.com/MaiM-with-u"
+  },
+  "license": "GPL-v3.0-or-later",
+  "urls": {
+    "repository": "https://github.com/MaiM-with-u/maibot",
+    "homepage": "https://github.com/MaiM-with-u/maibot",
+    "documentation": "https://github.com/MaiM-with-u/maibot",
+    "issues": "https://github.com/MaiM-with-u/maibot/issues"
+  },
+  "changelog": "CHANGELOG.md",
+  "host_application": {
+    "min_version": "1.0.0",
+    "max_version": "1.0.0"
+  },
+  "sdk": {
+    "min_version": "2.0.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [
+    { "type": "python_package", "name": "sqlmodel", "version_spec": ">=0.0.24" },
+    { "type": "python_package", "name": "sqlalchemy", "version_spec": ">=2.0.41" },
+    { "type": "python_package", "name": "aiosqlite", "version_spec": ">=0.21.0" },
+    { "type": "python_package", "name": "numpy", "version_spec": ">=1.24.0" }
+  ],
+  "capabilities": [
+    "send.text",
+    "config.get",
+    "llm.embed"
+  ],
+  "i18n": {
+    "default_locale": "zh-CN",
+    "locales_path": "_locales",
+    "supported_locales": ["zh-CN"]
+  },
+  "id": "maibot-team.astrbot-db-port"
+}
