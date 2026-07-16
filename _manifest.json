@@ -1,23 +1,23 @@
 {
   "manifest_version": 2,
-  "version": "1.0.0",
-  "name": "AstrBot 数据库移植 (AstrBot Database Port)",
-  "description": "把 AstrBot 的数据库设计（SQLModel + 异步 DAO + 万能 KV 表 + 自研迁移）整体移植到 MaiBot 插件运行时，提供隔离的、schema 友好的存储抽象。",
+  "version": "2.0.0",
+  "name": "知识库 (Knowledge Base RAG)",
+  "description": "MaiBot 知识库插件：markdown 文档语义切分 + 向量/BM25 混合检索 + RRF 融合 + 自动注入，并附 AstrBot 数据库移植作为存储抽象与 Web 管理界面。",
   "author": {
     "name": "MaiBot Community",
-    "url": "https://github.com/MaiM-with-u"
+    "url": "https://github.com/cyhqw"
   },
   "license": "GPL-v3.0-or-later",
   "urls": {
-    "repository": "https://github.com/MaiM-with-u/maibot",
-    "homepage": "https://github.com/MaiM-with-u/maibot",
-    "documentation": "https://github.com/MaiM-with-u/maibot",
-    "issues": "https://github.com/MaiM-with-u/maibot/issues"
+    "repository": "https://github.com/cyhqw/maibot-astrbot-db",
+    "homepage": "https://github.com/cyhqw/maibot-astrbot-db",
+    "documentation": "https://github.com/cyhqw/maibot-astrbot-db",
+    "issues": "https://github.com/cyhqw/maibot-astrbot-db/issues"
   },
   "changelog": "CHANGELOG.md",
   "host_application": {
     "min_version": "1.0.0",
-    "max_version": "1.0.0"
+    "max_version": "1.99.99"
   },
   "sdk": {
     "min_version": "2.0.0",

@@ -8,7 +8,7 @@
 >
 > 2. **A_memorix 不适合做结构化知识库** — 它是为聊天机器人记忆设计的：滑动窗口硬切、LLM 自由抽取关系导致混乱、`chat_scope` 过滤让脚本导入的内容对所有聊天不可见。本插件的 KB 模块完全重写：按 markdown 标题语义切分、不抽取关系只存原文、混合检索（向量 + BM25 + RRF）。
 >
-> 3. **召回与注入不完整** — 仅靠 LLM Tool 被动调用不够，需要自动召回 + 注入到 prompt。本插件通过 `maisaka.planner.before_request` Hook 实现，且与 A_memorix 互不冲突。
+> 3. **召回与注入不完整** — 仅靠 LLM Tool 被动调用不够，需要自动召回 + 注入到 prompt。本插件通过 `maisaka.replyer.before_model_request` Hook 实现，且与 A_memorix 互不冲突。
 >
 > 4. **无法拦截特定消息** — MaiBot 原生无前缀拦截能力。本插件通过 `chat.receive.before_process` Hook 实现，命中前缀的消息不记录、不回复、不进 A_memorix。
 >
@@ -44,12 +44,12 @@
 
 ### 模块四：自动召回 + 注入器（v3.0 新增）★
 
-通过 `@HookHandler("maisaka.planner.before_request")` 在 LLM 调用前自动注入知识库参考。
+通过 `@HookHandler("maisaka.replyer.before_model_request")` 在 LLM 调用前自动注入知识库参考。
 
 - 自动提取最后一条 user 消息作为 query
-- 检索知识库，命中高置信度结果时作为 user message 追加到 prompt
+- 检索知识库，命中高置信度结果时**插入到最后一条 user 消息之前**（标准 RAG 注入位置，避免污染对话结尾）
 - **去重逻辑**：LLM 已调过 `knowledge_search` tool 时跳过，避免重复
-- **与 A_memorix 兼容**：两者各自追加 user message，互不覆盖
+- **与 A_memorix 兼容**：两者各自注入，互不覆盖
 - 可配置 RRF 分数阈值、向量相似度阈值、top_k、最大注入字符数
 
 ### 模块五：Web 管理界面（v3.0 新增）★
@@ -57,12 +57,13 @@
 独立的 FastAPI + uvicorn Web server，提供完整管理 GUI。
 
 - **📊 统计面板**：文件数、chunks、tokens、大小、embedding 模型
-- **📁 文件面板**：列表 + 状态过滤 + 切片详情查看
+- **📁 文件面板**：列表 + 状态过滤 + **分类过滤** + 切片详情弹窗 + **单文件删除** + **上传新文件**（.md/.txt）
 - **🔍 检索测试**：实时查询，显示分数、来源、章节路径
 - **⚙️ 配置面板**：JSON 编辑器，保存后自动热重载
+- **🌗 暗色模式**：明/暗主题切换，记忆偏好
 - 默认监听 `127.0.0.1:8765`，可配置 token 认证
 
-> **真实知识库验证**：用 55 个原神设定文件（982 KB）测试，全部成功导入为 1211 个 chunks，12 个测试查询（"法涅斯"/"尼伯龙根"/"世界树"/"降临者"/"桑多涅"等）全部能检索到相关段落。Web UI 实测可正常显示统计、查看切片、检索测试。详见 [验证脚本](tests/verify_genshin_kb.py)
+> **真实知识库验证**：用 55 个原神设定文件（982 KB）测试，全部成功导入为 1211 个 chunks，12 个测试查询（"法涅斯"/"尼伯龙根"/"世界树"/"降临者"/"桑多涅"等）全部能检索到相关段落。
 
 ## 设计来源
 
@@ -80,7 +81,7 @@
 - ✅ **异步 DAO**：基于 SQLAlchemy[asyncio] + aiosqlite，单文件 SQLite + WAL + 完整 PRAGMA 调优
 - ✅ **三层 KV**：`global` / `umo`(会话级) / `plugin`(插件私有) 三个 scope，自动 upsert
 - ✅ **自研迁移**：装饰器注册迁移函数，幂等执行，迁移状态存到 preferences 表自身
-- ✅ **24 个公开 API**：通过 `self.ctx.api.call('astrdb.kv.put', ...)` 供其他插件调用
+- ✅ **24 个公开 API**（15 个数据库/对话 + 9 个知识库）：通过 `self.ctx.api.call('astrdb.kv.put', ...)` 供其他插件调用
 - ✅ **2 个 Hook 处理器**：消息前缀拦截 + 自动召回注入
 - ✅ **1 个 LLM Tool** `knowledge_search`：让 Bot 在对话中主动检索知识库
 - ✅ **管理命令** `/adb`：stats / tables / backup / export
@@ -93,7 +94,7 @@
 ```
 maibot-astrbot-db/
 ├── _manifest.json          # MaiBot 插件清单
-├── plugin.py               # 插件入口：on_load/on_unload + 5 个 Mixin 集成
+├── plugin.py               # 插件入口：on_load/on_unload + Mixin 集成
 ├── requirements.txt        # 依赖
 ├── pytest.ini              # 测试配置
 ├── astrdb/                 # 核心数据库 + KB + 拦截器 + 注入器 + Web UI
@@ -111,20 +112,20 @@ maibot-astrbot-db/
 │   │   ├── vector_store.py # numpy 向量索引
 │   │   ├── search.py       # 混合检索 + RRF
 │   │   ├── importer.py     # 批量导入
-│   │   └── api.py          # 8 个 KB API + LLM Tool
+│   │   └── api.py          # 9 个 KB API + LLM Tool
 │   └── webui/              # ★ Web 管理界面
 │       └── server.py       # FastAPI + 嵌入式 HTML 前端
 ├── importers/
 │   └── astrbot_importer.py # 从 AstrBot data_v4.db 导入
 └── tests/                  # 74 个 pytest 测试
-    ├── conftest.py
+    ├── conftest.py         # 自动探测真实 SDK，缺失则回退到 _sdk_stub
+    ├── _sdk_stub/          # maibot_sdk 测试桩（无 SDK 环境下跑测试用）
     ├── test_models.py / test_kv.py / test_conversations.py
     ├── test_migrations.py / test_stats.py / test_integration.py
     ├── test_kb.py / test_kb_chunker.py
     ├── test_interceptor.py     # 拦截器测试
     ├── test_injector.py        # 注入器测试
-    ├── test_webui.py           # Web UI 端到端测试
-    └── verify_genshin_kb.py    # 真实知识库验证脚本
+    └── test_webui.py           # Web UI 端到端测试
 ```
 
 ## 安装
@@ -138,7 +139,7 @@ cp -r maibot-astrbot-db /path/to/MaiBot/plugins/
 ### 2. 安装 Python 依赖
 
 ```bash
-pip install sqlmodel>=0.0.24 aiosqlite>=0.21.0 'sqlalchemy[asyncio]>=2.0.41'
+pip install -r requirements.txt
 ```
 
 或者依赖 MaiBot 的 `pyproject.toml` 自动安装（`_manifest.json` 已声明 `dependencies`）。
@@ -329,11 +330,14 @@ PRAGMA optimize
 
 ```bash
 cd maibot-astrbot-db
-pip install sqlmodel aiosqlite 'sqlalchemy[asyncio]' pytest pytest-asyncio
+pip install -r requirements.txt
+pip install pytest pytest-asyncio
 pytest -v
 ```
 
-预期输出：`27 passed`。
+预期输出：`74 passed`。
+
+测试桩说明：`tests/_sdk_stub/` 提供一份 `maibot_sdk` 最小化桩，`conftest.py` 会优先使用真实 SDK，环境未安装时自动回退到桩——所以无需装 MaiBot Plugin SDK 也能跑全部测试。
 
 测试覆盖：
 - `test_models.py` — UMO 构造/解析/往返、模型默认值
@@ -342,17 +346,6 @@ pytest -v
 - `test_migrations.py` — 迁移注册、幂等执行、列补齐
 - `test_stats.py` — 平台统计原子自增、不同桶隔离
 - `test_integration.py` — 端到端：通过模拟 API 调用走完插件链路
-
-## 示例调用插件
-
-仓库 `maibot-astrbot-db-demo/` 提供了一个最小示例插件，演示：
-
-- `/demo kv <key> [value]` — 读写 KV
-- `/demo conv create <title>` — 创建对话
-- `/demo conv list` — 列出当前用户的所有对话
-- `/demo stats` — 查看数据库统计
-
-直接作为 MaiBot 插件放到 `plugins/` 下即可运行。
 
 ## 许可证
 
@@ -611,6 +604,21 @@ score(d) = sum( 1 / (k + rank_i(d)) )  for each retriever i
 
 真实 embedding 服务（OpenAI / MaiBot）的耗时取决于 API 调用，55 文件 1211 chunks 按 16 batch 大约需要 1-3 分钟。
 
+## 关于"世界书"功能
+
+设计上**没有**把世界书做成知识库下的独立子模块。理由如下：
+
+知识库的 markdown 语义切分已经保留了完整的标题层级路径 `title_path`（例如 `["蒙德", "第二幕", "月宫与葬火", "法涅斯的诞生"]`），每个 chunk 天然等价于一条世界书条目——它有标题、有正文、有归属章节、可按 `category` 过滤。如果再单独做一套"世界书条目 CRUD + 独立检索"，会和知识库完全重叠：同样的存表、同样的 embedding、同样的混合检索，只是换了个名字。
+
+因此世界书的能力被直接吸收进知识库：
+
+- **条目 = chunk**：一个 markdown 小节就是一个条目，`heading` 是条目名，`content` 是条目内容
+- **章节归属 = title_path**：检索结果返回的 `title_path` 就是世界书条目的分类树
+- **分类标签 = category**：用 `default_category` 给一批文件打标签，检索时用 `category` 参数过滤，等价于"只在这本世界书里查"
+- **条目管理 = Web UI**：文件面板的上传/删除/分类过滤就是条目管理入口
+
+要模拟"多本独立世界书"，只需给每本书的文件设不同的 `category`，检索时传 `category="某书"` 即可隔离。无需额外数据结构。
+
 ## 常见问题
 
 ### Q: 用 MaiBot embedding 报错 "无法获取 self.ctx.llm.embed"
@@ -625,7 +633,7 @@ A: 检查 `astrdb.kb.stats` API 返回的 `embedding_model` 和 `embedding_dimen
 
 ### Q: 中文短查询（2 字以下）检索不到
 
-A: trigram 分词器要求查询 ≥ 3 字符。短查询会自动回退 `LIKE` 兜底，但只能精确匹配。建议查询时多写几个字（"温迪" → "温迪的故事"）。
+A: trigram 分词器要求 FTS5 MATCH 查询 ≥ 3 字符。短查询会自动回退 `LIKE` 兜底（查真实 `kb_chunks` 表，非 FTS 虚拟表），可做子串精确匹配。若仍检索不到，检查文件内容是否确实包含该子串，或查询时多写几个字（"温迪" → "温迪的故事"）。
 
 ### Q: 文件更新后没重新导入
 

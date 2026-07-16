@@ -12,10 +12,14 @@ import pytest_asyncio
 # 让 tests 能找到 astrdb 包
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# 让 tests 能找到 maibot_sdk（如果环境里没装）
-_SDK_PATH = Path("/home/z/my-project/research/maibot_plugin_sdk-2.7.0")
-if _SDK_PATH.exists():
-    sys.path.insert(0, str(_SDK_PATH))
+# 优先使用真实 maibot_sdk；若环境未安装，回退到随仓库分发的测试桩
+# （tests/_sdk_stub/maibot_sdk）。真实 SDK 行为以 MaiBot 运行时为准。
+try:
+    import maibot_sdk  # noqa: F401
+except ImportError:
+    _STUB_DIR = Path(__file__).parent / "_sdk_stub"
+    if _STUB_DIR.is_dir():
+        sys.path.insert(0, str(_STUB_DIR))
 
 
 @pytest_asyncio.fixture

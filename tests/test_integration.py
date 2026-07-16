@@ -18,7 +18,7 @@ import pytest
 
 # 让测试能找到 astrdb 和 plugin 模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "research" / "maibot_plugin_sdk-2.7.0"))
+# maibot_sdk 由 conftest 统一处理（真实 SDK 优先，否则回退到测试桩）
 
 
 class FakePluginContext:
@@ -85,6 +85,9 @@ async def test_end_to_end_kv_via_api(tmp_path):
     p._plugin_config_data = {
         "database": {"enabled": True, "db_filename": "test_e2e.db", "config_version": "1.0.0", "auto_backup_on_start": False},
         "admin": {"admin_users": [], "config_version": "1.0.0"},
+        # 集成测试聚焦 DB/KV/对话；关闭 KB 与 Web UI 避免起 dummy embedder 与固定端口 server
+        "knowledge_base": {"enabled": False, "config_version": "1.0.0"},
+        "webui": {"enabled": False, "config_version": "1.0.0"},
     }
     p._plugin_config_instance = plugin_module.AstrBotDbConfig(**p._plugin_config_data)
 
@@ -164,6 +167,8 @@ async def test_end_to_end_conversation_via_api(tmp_path):
     p._plugin_config_data = {
         "database": {"enabled": True, "db_filename": "test_e2e_conv.db", "config_version": "1.0.0", "auto_backup_on_start": False},
         "admin": {"admin_users": [], "config_version": "1.0.0"},
+        "knowledge_base": {"enabled": False, "config_version": "1.0.0"},
+        "webui": {"enabled": False, "config_version": "1.0.0"},
     }
     p._plugin_config_instance = plugin_module.AstrBotDbConfig(**p._plugin_config_data)
 
@@ -237,6 +242,8 @@ async def test_end_to_end_message_history(tmp_path):
     p._plugin_config_data = {
         "database": {"enabled": True, "db_filename": "test_e2e_msg.db", "config_version": "1.0.0", "auto_backup_on_start": False},
         "admin": {"admin_users": [], "config_version": "1.0.0"},
+        "knowledge_base": {"enabled": False, "config_version": "1.0.0"},
+        "webui": {"enabled": False, "config_version": "1.0.0"},
     }
     p._plugin_config_instance = plugin_module.AstrBotDbConfig(**p._plugin_config_data)
 

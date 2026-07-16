@@ -3,17 +3,19 @@
 自动召回 + 注入器 — 在 LLM 调用前自动检索知识库并注入到 prompt。
 
 机制：
-- 注册 `maisaka.planner.before_request` Hook（BLOCKING）
-- 在 planner 构造完 messages 之后、调 LLM 之前触发
+- 注册 `maisaka.replyer.before_model_request` Hook（BLOCKING）
+- 这是官方文档指定的"改写最终发给模型的消息列表"的 Hook 点
+- 在 replyer 构建完最终 messages 之后、真正请求模型之前触发
 - 拿到 messages 列表中最后一条 user message 作为 query
 - 调用本插件的 HybridSearcher 检索知识库
-- 命中高置信度结果时，把检索结果作为新的 user message append 到 messages
-- LLM 看到这条"知识库参考"消息后，会基于它回答
+- 命中高置信度结果时，把检索结果作为一条 user message 插入到最后一条
+  user message 之前（标准 RAG 模式：上下文在问题之前），让 LLM 基于它回答
+- 通过 modified_kwargs 返回新 messages，真正影响本次 LLM 请求
+- 该 Hook 只改写本次临时请求，不写回聊天历史、不影响中期记忆插入
 
-与 A_memorix 的关系：
-- A_memorix 的 heuristic_injector 在更早的 _build_planner_injected_user_messages 阶段注入
-- 本 Hook 在那之后触发，互不覆盖
-- 两者各自追加 user message，不冲突
+注意：不要用 `maisaka.planner.before_request` 注入 messages。planner 阶段
+messages 尚未最终构建，replyer 之后会重建列表，planner Hook 里改的 messages
+可能被丢弃。改最终消息列表必须用 replyer.before_model_request。
 
 去重逻辑：
 - 检查最近 N 轮 messages 中是否已包含 "knowledge_search" tool call
@@ -154,9 +156,9 @@ class InjectorMixin:
     """
 
     @HookHandler(
-        "maisaka.planner.before_request",
+        "maisaka.replyer.before_model_request",
         name="astrdb_kb_auto_inject",
-        description="在 LLM 调用前自动检索知识库并注入相关内容到 prompt",
+        description="在 replyer 构建最终消息后、请求模型前，自动检索知识库并注入相关内容",
         mode=HookMode.BLOCKING,
         order=HookOrder.NORMAL,
         error_policy=ErrorPolicy.SKIP,
@@ -164,10 +166,13 @@ class InjectorMixin:
     async def hook_auto_inject(
         self,
         messages: Any = None,
-        session_id: str = "",
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """自动召回 + 注入 Hook。"""
+        """自动召回 + 注入 Hook。
+
+        使用 replyer.before_model_request：这是改写"真正发给模型的消息列表"的
+        官方 Hook 点，插入的 user message 会进入本次 LLM 请求。
+        """
 
         try:
             cfg = self.config.injector  # type: ignore[attr-defined]
@@ -234,13 +239,6 @@ class InjectorMixin:
         if len(injection_text) > cfg.max_chars:
             injection_text = injection_text[: cfg.max_chars - 50] + "\n\n...（已截断）"
 
-        # 注入：作为新的 user message append 到 messages 末尾
-        # 这样 LLM 会把它当作"用户提供的参考材料"
-        new_message = {
-            "role": "user",
-            "content": injection_text,
-        }
-
         try:
             logger_info = self.ctx.logger  # type: ignore[attr-defined]
         except Exception:
@@ -250,16 +248,26 @@ class InjectorMixin:
             f"chars={len(injection_text)}"
         )
 
-        # 返回修改后的 messages
-        # 注意：HookHandler 的 modified_kwargs 会覆盖后续处理器看到的 kwargs
-        modified_messages = list(messages) + [new_message]
+        # 注入：把知识库参考作为一条 user message 插入到最后一条 user message 之前
+        # 标准 RAG 模式：上下文在问题之前，LLM 据此回答当前问题
+        new_message = {"role": "user", "content": injection_text}
+        modified_messages = list(messages)
+
+        insert_at = len(modified_messages)
+        for i in range(len(modified_messages) - 1, -1, -1):
+            msg = modified_messages[i]
+            role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+            if role == "user":
+                insert_at = i
+                break
+        modified_messages.insert(insert_at, new_message)
+
+        # 返回改写后的 messages；保留其余 kwargs 不变
+        modified_kwargs = dict(kwargs)
+        modified_kwargs["messages"] = modified_messages
         return {
             "action": "continue",
-            "modified_kwargs": {
-                "messages": modified_messages,
-                "session_id": session_id,
-                **{k: v for k, v in kwargs.items() if k not in ("messages", "session_id")},
-            },
+            "modified_kwargs": modified_kwargs,
         }
 
 

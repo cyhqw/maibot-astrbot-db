@@ -785,13 +785,15 @@ class AstrBotDatabase:
 
         q = query.strip()
 
-        # 短查询回退 LIKE
+        # 短查询回退 LIKE。
+        # 注意：必须查真实表 kb_chunks，不能查 FTS5 虚拟表 kb_chunks_fts——
+        # FTS5 虚拟表的列不支持 LIKE 子串过滤（会静默返回空），这是历史 bug。
         if len(q) < 3:
             async with self.get_db() as session:
                 stmt = text(
                     """
                     SELECT chunk_id, 1.0 AS score
-                    FROM kb_chunks_fts
+                    FROM kb_chunks
                     WHERE content LIKE :pattern
                     LIMIT :limit
                     """
@@ -819,12 +821,12 @@ class AstrBotDatabase:
                 return [(row[0], -float(row[1])) for row in result.fetchall()]
             except Exception as exc:
                 logger.warning(f"FTS 查询失败: {exc}, 回退 LIKE")
-                # FTS 失败时兜底 LIKE
+                # FTS 失败时兜底 LIKE（同样查真实表 kb_chunks）
                 async with self.get_db() as session2:
                     stmt = text(
                         """
                         SELECT chunk_id, 1.0 AS score
-                        FROM kb_chunks_fts
+                        FROM kb_chunks
                         WHERE content LIKE :pattern
                         LIMIT :limit
                         """

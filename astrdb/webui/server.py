@@ -29,7 +29,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -184,6 +184,18 @@ class WebServer:
         async def file_chunks(file_id: str) -> dict:
             return await self._handle_file_chunks(file_id)
 
+        @app.delete("/api/files/{file_id}", dependencies=[Depends(verify_token)])
+        async def delete_file(file_id: str) -> dict:
+            return await self._handle_delete_file(file_id)
+
+        @app.get("/api/categories", dependencies=[Depends(verify_token)])
+        async def categories() -> dict:
+            return await self._handle_categories()
+
+        @app.post("/api/upload", dependencies=[Depends(verify_token)])
+        async def upload(file: UploadFile = File(...)) -> dict:
+            return await self._handle_upload(file)
+
         @app.post("/api/search", dependencies=[Depends(verify_token)])
         async def search(req: SearchRequest) -> dict:
             return await self._handle_search(req)
@@ -303,6 +315,82 @@ class WebServer:
             ],
         }
 
+    async def _handle_delete_file(self, file_id: str) -> dict:
+        """删除文件及其 chunks、FTS、内存向量索引。"""
+
+        from ..kb.api import _kb_vector_index
+
+        db = get_db()
+        # 先查 chunk_ids 用于从内存索引删除
+        from sqlmodel import select
+        from ..models import KnowledgeChunk
+
+        async with db.get_db() as session:
+            stmt = select(KnowledgeChunk.chunk_id).where(KnowledgeChunk.file_id == file_id)
+            rows = (await session.execute(stmt)).fetchall()
+        chunk_ids = [r[0] for r in rows]
+
+        deleted = await db.delete_kb_file(file_id)
+        if _kb_vector_index is not None:
+            for cid in chunk_ids:
+                _kb_vector_index.remove(cid)
+
+        return {"success": True, "deleted_chunks": deleted}
+
+    async def _handle_categories(self) -> dict:
+        """返回知识库中出现的所有 category（去重）。"""
+
+        from .. import get_db
+
+        db = get_db()
+        all_files = await db.list_kb_files()
+        cats: list[str] = []
+        seen: set[str] = set()
+        for f in all_files:
+            c = f.category or ""
+            if c and c not in seen:
+                seen.add(c)
+                cats.append(c)
+        return {"categories": cats}
+
+    async def _handle_upload(self, file: UploadFile) -> dict:
+        """上传 .md/.txt 文件到 knowledge_dir 并增量导入。"""
+
+        from ..kb.api import _kb_importer
+
+        kb_cfg = self._plugin.config.knowledge_base
+        kb_dir = self._plugin.ctx.paths.data_dir / kb_cfg.knowledge_dir
+        kb_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = file.filename or "upload.txt"
+        # 安全：仅取文件名，防止路径穿越
+        safe_name = Path(filename).name
+        if not safe_name:
+            raise HTTPException(status_code=400, detail="非法文件名")
+        lower = safe_name.lower()
+        if not (lower.endswith(".md") or lower.endswith(".markdown") or lower.endswith(".txt")):
+            raise HTTPException(status_code=400, detail="仅支持 .md / .markdown / .txt 文件")
+
+        dest = kb_dir / safe_name
+        content = await file.read()
+        dest.write_bytes(content)
+
+        # 触发增量导入
+        if _kb_importer is not None:
+            try:
+                result = await _kb_importer.ingest_directory(force_rebuild=False)
+                return {
+                    "success": True,
+                    "saved_as": safe_name,
+                    "size_bytes": len(content),
+                    "ingest": result.to_dict(),
+                }
+            except Exception as exc:
+                logger.warning(f"上传后导入失败: {exc}")
+                return {"success": True, "saved_as": safe_name, "ingest_error": str(exc)}
+
+        return {"success": True, "saved_as": safe_name, "ingest": None}
+
     async def _handle_search(self, req: SearchRequest) -> dict:
         from ..kb.api import _kb_searcher
         from ..kb import SearchQuery
@@ -355,10 +443,21 @@ class WebServer:
         return {"success": True, **result.to_dict()}
 
     async def _handle_get_config(self) -> dict:
-        """读取插件当前配置（通过实例属性）。"""
+        """读取插件当前配置（序列化 config_model）。
+
+        优先用 config_model.model_dump()；若 plugin 对象只暴露旧式
+        get_plugin_config_data()（例如测试桩），则回退到它。
+        """
 
         try:
-            return self._plugin.get_plugin_config_data()
+            cfg = getattr(self._plugin, "config", None)
+            if cfg is not None and hasattr(cfg, "model_dump"):
+                return cfg.model_dump(mode="json")
+            if cfg is not None and hasattr(cfg, "dict"):
+                return cfg.dict()
+            if hasattr(self._plugin, "get_plugin_config_data"):
+                return self._plugin.get_plugin_config_data()
+            return {}
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 
@@ -434,294 +533,177 @@ _INDEX_HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>AstrBot DB 知识库管理</title>
+<title>知识库管理</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
+:root {
+  --bg: #f5f7fa; --surface: #ffffff; --surface-2: #f8f9fc; --surface-3: #eef1f6;
+  --text: #2c3e50; --text-muted: #888; --border: #e8ecf3;
+  --brand: #667eea; --brand-dark: #5568d3; --danger: #e74c3c; --danger-dark: #c0392b;
+  --ok: #27ae60; --warn: #f39c12;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+:root[data-theme="dark"] {
+  --bg: #1a1b26; --surface: #24283b; --surface-2: #2d3250; --surface-3: #3a3f5c;
+  --text: #c0caf5; --text-muted: #8b95b8; --border: #3a3f5c;
+  --brand: #7c8ff0; --brand-dark: #667eea; --danger: #e06c75; --danger-dark: #c5505a;
+  --ok: #98c379; --warn: #e5c07b;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-               "Microsoft YaHei", sans-serif;
-  background: #f5f7fa;
-  color: #333;
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6; transition: background 0.2s, color 0.2s;
 }
 header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 20px 30px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  color: white; padding: 18px 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  display: flex; align-items: center; justify-content: space-between;
 }
-header h1 { font-size: 22px; margin-bottom: 4px; }
+header h1 { font-size: 21px; margin-bottom: 2px; }
 header .subtitle { font-size: 13px; opacity: 0.9; }
+.theme-btn {
+  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); color: white;
+  padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.theme-btn:hover { background: rgba(255,255,255,0.28); }
 .container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 16px;
-  background: white;
-  padding: 6px;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--surface); padding: 6px; border-radius: 8px; box-shadow: var(--shadow); flex-wrap: wrap; }
 .tab {
-  padding: 8px 18px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #555;
-  transition: all 0.2s;
+  padding: 8px 18px; background: transparent; border: none; cursor: pointer; border-radius: 6px;
+  font-size: 14px; color: var(--text-muted); transition: all 0.2s;
 }
-.tab:hover { background: #f0f2f5; }
-.tab.active { background: #667eea; color: white; }
-.panel {
-  background: white;
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  margin-bottom: 16px;
-}
-.panel h2 { font-size: 16px; margin-bottom: 16px; color: #2c3e50; }
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
-}
-.stat-card {
-  background: linear-gradient(135deg, #f8f9fc 0%, #e8ecf3 100%);
-  padding: 16px;
-  border-radius: 8px;
-  border-left: 3px solid #667eea;
-}
-.stat-card .label { font-size: 12px; color: #888; margin-bottom: 4px; }
-.stat-card .value { font-size: 24px; font-weight: 600; color: #2c3e50; }
-.stat-card .unit { font-size: 12px; color: #888; margin-left: 4px; }
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-th, td {
-  text-align: left;
-  padding: 8px 12px;
-  border-bottom: 1px solid #eee;
-}
-th { background: #f8f9fc; font-weight: 600; color: #555; }
-tr:hover { background: #fafbfc; }
-.status-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 500;
-}
-.status-ready { background: #d4edda; color: #155724; }
-.status-failed { background: #f8d7da; color: #721c24; }
-.status-pending { background: #fff3cd; color: #856404; }
-.status-processing { background: #d1ecf1; color: #0c5460; }
-.btn {
-  padding: 6px 14px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-  transition: background 0.2s;
-}
-.btn:hover { background: #5568d3; }
-.btn-danger { background: #e74c3c; }
-.btn-danger:hover { background: #c0392b; }
+.tab:hover { background: var(--surface-3); }
+.tab.active { background: var(--brand); color: white; }
+.panel { background: var(--surface); border-radius: 8px; padding: 24px; box-shadow: var(--shadow); margin-bottom: 16px; }
+.panel h2 { font-size: 16px; margin-bottom: 16px; color: var(--text); }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.stat-card { background: var(--surface-2); padding: 16px; border-radius: 8px; border-left: 3px solid var(--brand); }
+.stat-card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.stat-card .value { font-size: 24px; font-weight: 600; color: var(--text); }
+.stat-card .unit { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { background: var(--surface-2); font-weight: 600; color: var(--text-muted); }
+tr:hover { background: var(--surface-2); }
+.status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+.status-ready { background: rgba(39,174,96,0.15); color: var(--ok); }
+.status-failed { background: rgba(231,76,60,0.15); color: var(--danger); }
+.status-pending { background: rgba(243,156,18,0.15); color: var(--warn); }
+.status-processing { background: rgba(102,126,234,0.15); color: var(--brand); }
+.cat-badge { display: inline-block; padding: 1px 7px; border-radius: 8px; font-size: 11px; background: var(--surface-3); color: var(--text-muted); }
+.btn { padding: 6px 14px; background: var(--brand); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+.btn:hover { background: var(--brand-dark); }
+.btn-danger { background: var(--danger); }
+.btn-danger:hover { background: var(--danger-dark); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
-.search-box {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+.btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--surface-3); }
+.search-box { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.search-box input, .search-box select, .filter-input, .filter-select {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px;
+  background: var(--surface); color: var(--text);
 }
-.search-box input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-.search-box input:focus { outline: none; border-color: #667eea; }
-.search-box select {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  background: white;
-}
-.hit-card {
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  background: #fafbfc;
-}
-.hit-card .hit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: #888;
-}
-.hit-card .hit-title { font-weight: 600; color: #2c3e50; font-size: 14px; }
-.hit-card .hit-content {
-  font-size: 13px;
-  color: #444;
-  white-space: pre-wrap;
-  max-height: 200px;
-  overflow-y: auto;
-  background: white;
-  padding: 8px;
-  border-radius: 4px;
-  border: 1px solid #eee;
-}
-.hit-card .hit-scores {
-  font-family: monospace;
-  font-size: 11px;
-  color: #888;
-}
-.toast {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 12px 20px;
-  background: #2c3e50;
-  color: white;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  z-index: 1000;
-  opacity: 0;
-  transition: opacity 0.3s;
-}
+.search-box input:focus, .filter-input:focus { outline: none; border-color: var(--brand); }
+.hit-card { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; background: var(--surface-2); }
+.hit-card .hit-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); }
+.hit-card .hit-title { font-weight: 600; color: var(--text); font-size: 14px; }
+.hit-card .hit-content { font-size: 13px; color: var(--text); white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 4px; border: 1px solid var(--border); }
+.hit-card .hit-scores { font-family: monospace; font-size: 11px; color: var(--text-muted); }
+.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: var(--text); color: var(--surface); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1000; opacity: 0; transition: opacity 0.3s; }
 .toast.show { opacity: 1; }
-.toast.error { background: #e74c3c; }
-.toast.success { background: #27ae60; }
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: #888;
-}
-.spinner {
-  border: 3px solid #f3f3f3;
-  border-top: 3px solid #667eea;
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 10px;
-}
+.toast.error { background: var(--danger); color: white; }
+.toast.success { background: var(--ok); color: white; }
+.loading { text-align: center; padding: 40px; color: var(--text-muted); }
+.spinner { border: 3px solid var(--surface-3); border-top: 3px solid var(--brand); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
 @keyframes spin { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
-.token-input {
-  padding: 6px 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  width: 200px;
-}
-.actions-bar {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-  align-items: center;
-}
-.config-editor {
-  width: 100%;
-  min-height: 400px;
-  padding: 12px;
-  font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
-  font-size: 13px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: #fafbfc;
-}
-.muted { color: #888; font-size: 12px; }
+.actions-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+.config-editor { width: 100%; min-height: 400px; padding: 12px; font-family: "SF Mono", Monaco, "Cascadia Code", monospace; font-size: 13px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); resize: vertical; }
+.muted { color: var(--text-muted); font-size: 12px; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: flex-start; padding: 30px 20px; overflow-y: auto; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--surface); border-radius: 8px; max-width: 900px; width: 100%; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h2 { font-size: 16px; color: var(--text); }
+.modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
+.modal-close:hover { color: var(--text); }
+.upload-wrap { display: inline-flex; align-items: center; gap: 6px; }
+input[type=file] { display: none; }
 </style>
 </head>
 <body>
 <header>
-  <h1>📚 AstrBot DB 知识库管理</h1>
-  <div class="subtitle">MaiBot 插件 · 数据库 + RAG 知识库</div>
+  <div>
+    <h1>📚 AstrBot DB · 知识库管理</h1>
+    <div class="subtitle">MaiBot 插件 · 向量/BM25 混合检索 RAG</div>
+  </div>
+  <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
 </header>
 
 <div class="container">
   <div class="actions-bar">
     <span class="muted">Token (如配置):</span>
-    <input type="password" id="tokenInput" class="token-input" placeholder="留空则无认证">
+    <input type="password" id="tokenInput" class="filter-input" placeholder="留空则无认证" style="width:200px">
     <button class="btn btn-sm" onclick="saveToken()">保存</button>
     <span style="flex:1"></span>
-    <button class="btn btn-sm" onclick="refreshAll()">🔄 刷新</button>
+    <button class="btn btn-sm btn-ghost" onclick="refreshAll()">🔄 刷新</button>
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('stats')">📊 统计</button>
-    <button class="tab" onclick="switchTab('files')">📁 文件</button>
-    <button class="tab" onclick="switchTab('search')">🔍 检索测试</button>
-    <button class="tab" onclick="switchTab('config')">⚙️ 配置</button>
+    <button class="tab active" onclick="switchTab(this, 'stats')">📊 统计</button>
+    <button class="tab" onclick="switchTab(this, 'files')">📁 文件</button>
+    <button class="tab" onclick="switchTab(this, 'search')">🔍 检索测试</button>
+    <button class="tab" onclick="switchTab(this, 'config')">⚙️ 配置</button>
   </div>
 
-  <!-- 统计面板 -->
   <div id="panel-stats" class="panel">
     <h2>知识库统计</h2>
-    <div id="statsContent" class="stats-grid">
-      <div class="loading"><div class="spinner"></div>加载中...</div>
-    </div>
+    <div id="statsContent" class="stats-grid"><div class="loading"><div class="spinner"></div>加载中...</div></div>
     <div style="margin-top:20px">
       <button class="btn" onclick="ingest(false)">📥 增量导入</button>
       <button class="btn btn-danger" onclick="ingest(true)" style="margin-left:8px">🔧 强制全量重建</button>
     </div>
   </div>
 
-  <!-- 文件面板 -->
   <div id="panel-files" class="panel" style="display:none">
     <h2>知识库文件</h2>
     <div class="actions-bar">
-      <input type="text" id="fileFilter" placeholder="按文件名筛选..." style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:4px">
-      <select id="fileStatusFilter" style="padding:6px 10px;border:1px solid #ddd;border-radius:4px">
+      <input type="text" id="fileFilter" class="filter-input" placeholder="按文件名筛选..." style="flex:1;min-width:160px">
+      <select id="fileStatusFilter" class="filter-select">
         <option value="">全部状态</option>
         <option value="ready">ready</option>
         <option value="failed">failed</option>
         <option value="pending">pending</option>
         <option value="processing">processing</option>
       </select>
+      <select id="fileCategoryFilter" class="filter-select">
+        <option value="">全部分类</option>
+      </select>
       <button class="btn btn-sm" onclick="loadFiles()">筛选</button>
+      <span style="flex:1"></span>
+      <div class="upload-wrap">
+        <input type="file" id="uploadInput" accept=".md,.markdown,.txt" onchange="uploadFile(event)">
+        <button class="btn btn-sm" onclick="document.getElementById('uploadInput').click()">📤 上传文件</button>
+      </div>
     </div>
     <div style="overflow-x:auto">
       <table>
-        <thead>
-          <tr>
-            <th>文件名</th>
-            <th>状态</th>
-            <th>Chunks</th>
-            <th>Tokens</th>
-            <th>大小</th>
-            <th>最后导入</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="filesTable">
-          <tr><td colspan="7" class="loading"><div class="spinner"></div>加载中...</td></tr>
-        </tbody>
+        <thead><tr><th>文件名</th><th>分类</th><th>状态</th><th>Chunks</th><th>Tokens</th><th>大小</th><th>最后导入</th><th>操作</th></tr></thead>
+        <tbody id="filesTable"><tr><td colspan="8" class="loading"><div class="spinner"></div>加载中...</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <!-- 检索测试面板 -->
   <div id="panel-search" class="panel" style="display:none">
     <h2>检索测试</h2>
     <div class="search-box">
-      <input type="text" id="searchQuery" placeholder="输入查询，如：法涅斯是谁" onkeydown="if(event.key==='Enter')doSearch()">
-      <select id="searchMode">
+      <input type="text" id="searchQuery" placeholder="输入查询，如：法涅斯是谁" onkeydown="if(event.key==='Enter')doSearch()" style="flex:1;min-width:200px">
+      <select id="searchMode" class="filter-select">
         <option value="hybrid">混合（推荐）</option>
         <option value="vector">仅向量</option>
         <option value="bm25">仅 BM25</option>
       </select>
-      <select id="searchTopK">
+      <select id="searchTopK" class="filter-select">
         <option value="3">Top 3</option>
         <option value="5" selected>Top 5</option>
         <option value="10">Top 10</option>
@@ -731,17 +713,24 @@ tr:hover { background: #fafbfc; }
     <div id="searchResults"></div>
   </div>
 
-  <!-- 配置面板 -->
   <div id="panel-config" class="panel" style="display:none">
     <h2>插件配置</h2>
-    <p class="muted" style="margin-bottom:12px">
-      修改后点击"保存配置"，FileWatcher 会在数百毫秒内触发插件热重载。
-    </p>
+    <p class="muted" style="margin-bottom:12px">编辑 JSON 后点击"保存配置"，将写入 config.toml 并触发插件热重载。</p>
     <textarea id="configEditor" class="config-editor" placeholder="加载中..."></textarea>
     <div style="margin-top:12px">
       <button class="btn" onclick="saveConfig()">💾 保存配置</button>
-      <button class="btn btn-sm" onclick="loadConfig()" style="margin-left:8px">🔄 重新加载</button>
+      <button class="btn btn-sm btn-ghost" onclick="loadConfig()" style="margin-left:8px">🔄 重新加载</button>
     </div>
+  </div>
+</div>
+
+<div id="chunkModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">切片详情</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div id="modalBody"></div>
   </div>
 </div>
 
@@ -749,10 +738,21 @@ tr:hover { background: #fafbfc; }
 
 <script>
 let savedToken = localStorage.getItem('astrdb_token') || '';
-
-// 初始化
+let savedTheme = localStorage.getItem('astrdb_theme') || '';
+if (savedTheme === 'dark') { document.documentElement.setAttribute('data-theme','dark'); document.getElementById('themeBtn').textContent = '☀️'; }
 document.getElementById('tokenInput').value = savedToken;
 refreshAll();
+
+function toggleTheme() {
+  const root = document.documentElement;
+  if (root.getAttribute('data-theme') === 'dark') {
+    root.removeAttribute('data-theme'); localStorage.setItem('astrdb_theme','light');
+    document.getElementById('themeBtn').textContent = '🌙';
+  } else {
+    root.setAttribute('data-theme','dark'); localStorage.setItem('astrdb_theme','dark');
+    document.getElementById('themeBtn').textContent = '☀️';
+  }
+}
 
 function saveToken() {
   savedToken = document.getElementById('tokenInput').value.trim();
@@ -768,10 +768,7 @@ function headers() {
 }
 
 async function api(path, opts = {}) {
-  const resp = await fetch(path, {
-    ...opts,
-    headers: {...headers(), ...(opts.headers || {})},
-  });
+  const resp = await fetch(path, {...opts, headers: {...headers(), ...(opts.headers || {})}});
   if (!resp.ok) {
     let msg = resp.status + ' ' + resp.statusText;
     try { const j = await resp.json(); msg = j.detail || msg; } catch (e) {}
@@ -787,35 +784,31 @@ function toast(msg, type = '') {
   setTimeout(() => el.className = 'toast', 3000);
 }
 
-function switchTab(name) {
+function switchTab(btn, name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('[id^=panel-]').forEach(p => p.style.display = 'none');
-  event.target.classList.add('active');
+  btn.classList.add('active');
   document.getElementById('panel-' + name).style.display = 'block';
   if (name === 'stats') loadStats();
-  if (name === 'files') loadFiles();
+  if (name === 'files') { loadCategories(); loadFiles(); }
   if (name === 'config') loadConfig();
 }
 
-function refreshAll() {
-  loadStats();
-}
+function refreshAll() { loadStats(); }
 
-// ===== 统计 =====
 async function loadStats() {
   try {
     const s = await api('/api/stats');
-    const html = `
+    document.getElementById('statsContent').innerHTML = `
       <div class="stat-card"><div class="label">文件总数</div><div class="value">${s.files_total}</div></div>
-      <div class="stat-card"><div class="label">成功导入</div><div class="value" style="color:#27ae60">${s.files_ready}</div></div>
-      <div class="stat-card"><div class="label">失败</div><div class="value" style="color:#e74c3c">${s.files_failed}</div></div>
+      <div class="stat-card"><div class="label">成功导入</div><div class="value" style="color:var(--ok)">${s.files_ready}</div></div>
+      <div class="stat-card"><div class="label">失败</div><div class="value" style="color:var(--danger)">${s.files_failed}</div></div>
       <div class="stat-card"><div class="label">总 chunks</div><div class="value">${s.chunks_total}</div></div>
       <div class="stat-card"><div class="label">总 tokens</div><div class="value">${s.tokens_total}</div></div>
       <div class="stat-card"><div class="label">总大小</div><div class="value">${s.size_human}</div></div>
       <div class="stat-card"><div class="label">内存索引</div><div class="value">${s.vector_index_size}</div></div>
       <div class="stat-card"><div class="label">Embedding</div><div class="value" style="font-size:14px">${s.embedding_model || '-'}<span class="unit">${s.embedding_dimension}d</span></div></div>
     `;
-    document.getElementById('statsContent').innerHTML = html;
   } catch (e) {
     document.getElementById('statsContent').innerHTML = '<div class="stat-card" style="grid-column:1/-1">加载失败: ' + e.message + '</div>';
   }
@@ -825,77 +818,115 @@ async function ingest(force) {
   if (force && !confirm('确认要强制全量重建？这可能需要较长时间。')) return;
   toast(force ? '开始全量重建...' : '开始增量导入...');
   try {
-    const r = await api('/api/' + (force ? 'rebuild' : 'ingest'), {
-      method: 'POST',
-      body: JSON.stringify({force_rebuild: force}),
-    });
-    toast(`完成: new=${r.new} updated=${r.updated} unchanged=${r.unchanged} failed=${r.failed} chunks=${r.chunks}`, 'success');
+    const r = await api('/api/' + (force ? 'rebuild' : 'ingest'), {method: 'POST', body: JSON.stringify({force_rebuild: force})});
+    toast('完成: new=' + r.new + ' updated=' + r.updated + ' unchanged=' + r.unchanged + ' failed=' + r.failed + ' chunks=' + r.chunks, 'success');
     loadStats();
-  } catch (e) {
-    toast('失败: ' + e.message, 'error');
-  }
+  } catch (e) { toast('失败: ' + e.message, 'error'); }
 }
 
-// ===== 文件列表 =====
+async function loadCategories() {
+  try {
+    const r = await api('/api/categories');
+    const sel = document.getElementById('fileCategoryFilter');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">全部分类</option>' + r.categories.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
+    sel.value = cur;
+  } catch (e) {}
+}
+
 async function loadFiles() {
   const status = document.getElementById('fileStatusFilter').value;
+  const category = document.getElementById('fileCategoryFilter').value;
   const filter = document.getElementById('fileFilter').value.toLowerCase();
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (category) params.set('category', category);
   try {
-    const r = await api('/api/files' + (status ? '?status=' + status : ''));
+    const r = await api('/api/files' + (params.toString() ? '?' + params.toString() : ''));
     let items = r.items;
     if (filter) items = items.filter(f => (f.file_name || '').toLowerCase().includes(filter));
     if (items.length === 0) {
-      document.getElementById('filesTable').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#888">无文件</td></tr>';
+      document.getElementById('filesTable').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">无文件</td></tr>';
       return;
     }
     document.getElementById('filesTable').innerHTML = items.map(f => `
       <tr>
-        <td title="${f.file_path}">${f.file_name}<div class="muted">${f.title || ''}</div></td>
-        <td><span class="status-badge status-${f.status}">${f.status}</span></td>
+        <td title="${esc(f.file_path)}">${esc(f.file_name)}<div class="muted">${esc(f.title || '')}</div></td>
+        <td>${f.category ? '<span class="cat-badge">' + esc(f.category) + '</span>' : '<span class="muted">-</span>'}</td>
+        <td><span class="status-badge status-${esc(f.status)}">${esc(f.status)}</span></td>
         <td>${f.chunk_count}</td>
         <td>${f.total_tokens}</td>
         <td>${f.size_human}</td>
         <td class="muted">${f.last_ingested_at ? new Date(f.last_ingested_at).toLocaleString() : '-'}</td>
-        <td><button class="btn btn-sm" onclick="viewChunks('${f.file_id}')">查看切片</button></td>
+        <td>
+          <button class="btn btn-sm" onclick="viewChunks('${esc(f.file_id)}')">切片</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteFile('${esc(f.file_id)}','${esc(f.file_name)}')" style="margin-left:4px">删除</button>
+        </td>
       </tr>
     `).join('');
   } catch (e) {
-    document.getElementById('filesTable').innerHTML = '<tr><td colspan="7" style="color:#e74c3c">加载失败: ' + e.message + '</td></tr>';
+    document.getElementById('filesTable').innerHTML = '<tr><td colspan="8" style="color:var(--danger)">加载失败: ' + esc(e.message) + '</td></tr>';
   }
 }
 
 async function viewChunks(fileId) {
   try {
     const r = await api('/api/files/' + fileId + '/chunks');
-    let html = `<h2>切片详情（${r.count} 个）</h2>`;
-    html += `<p class="muted" style="margin-bottom:12px">${r.file_path}</p>`;
+    document.getElementById('modalTitle').textContent = '切片详情（' + r.count + ' 个）';
+    let html = '<p class="muted" style="margin-bottom:12px">' + esc(r.file_path) + '</p>';
     if (r.count === 0) {
-      html += '<p>无切片</p>';
+      html += '<p class="muted">无切片</p>';
     } else {
       r.items.forEach(c => {
         html += `
           <div class="hit-card">
             <div class="hit-header">
-              <span class="hit-title">#${c.chunk_index} ${c.heading || ''}</span>
+              <span class="hit-title">#${c.chunk_index} ${esc(c.heading || '')}</span>
               <span>${c.char_count} chars / ${c.token_count} tokens ${c.has_embedding ? '✓ embedded' : '⚠ no embedding'}</span>
             </div>
-            <div class="muted" style="margin-bottom:6px">${(c.title_path || []).join(' > ')}</div>
-            <div class="hit-content">${escapeHtml(c.content)}</div>
-          </div>
-        `;
+            <div class="muted" style="margin-bottom:6px">${esc((c.title_path || []).join(' > '))}</div>
+            <div class="hit-content">${esc(c.content)}</div>
+          </div>`;
       });
     }
-    document.getElementById('panel-files').innerHTML = html + '<div style="margin-top:12px"><button class="btn" onclick="location.reload()">返回</button></div>';
-  } catch (e) {
-    toast('加载切片失败: ' + e.message, 'error');
-  }
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('chunkModal').classList.add('show');
+  } catch (e) { toast('加载切片失败: ' + e.message, 'error'); }
 }
 
-function escapeHtml(s) {
-  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function closeModal() { document.getElementById('chunkModal').classList.remove('show'); }
+
+async function deleteFile(fileId, name) {
+  if (!confirm('确认删除文件 "' + name + '" 及其所有切片？此操作不可撤销。')) return;
+  try {
+    await api('/api/files/' + fileId, {method: 'DELETE'});
+    toast('已删除: ' + name, 'success');
+    loadFiles(); loadStats();
+  } catch (e) { toast('删除失败: ' + e.message, 'error'); }
 }
 
-// ===== 检索测试 =====
+async function uploadFile(event) {
+  const input = event.target;
+  if (!input.files || input.files.length === 0) return;
+  const file = input.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
+  toast('上传中: ' + file.name + '...');
+  try {
+    const resp = await fetch('/api/upload', {method: 'POST', headers: savedToken ? {'Authorization': 'Bearer ' + savedToken} : {}, body: formData});
+    if (!resp.ok) {
+      let msg = resp.status; try { msg = (await resp.json()).detail || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    const r = await resp.json();
+    toast('上传成功: ' + r.saved_as, 'success');
+    loadFiles(); loadStats(); loadCategories();
+  } catch (e) { toast('上传失败: ' + e.message, 'error'); }
+  input.value = '';
+}
+
+function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
 async function doSearch() {
   const q = document.getElementById('searchQuery').value.trim();
   if (!q) { toast('请输入查询', 'error'); return; }
@@ -905,57 +936,37 @@ async function doSearch() {
   const useBM25 = mode !== 'vector';
   document.getElementById('searchResults').innerHTML = '<div class="loading"><div class="spinner"></div>检索中...</div>';
   try {
-    const r = await api('/api/search', {
-      method: 'POST',
-      body: JSON.stringify({query: q, top_k: topK, use_vector: useVector, use_bm25: useBM25}),
-    });
-    if (r.count === 0) {
-      document.getElementById('searchResults').innerHTML = '<p style="text-align:center;padding:20px;color:#888">未找到相关结果</p>';
-      return;
-    }
+    const r = await api('/api/search', {method: 'POST', body: JSON.stringify({query: q, top_k: topK, use_vector: useVector, use_bm25: useBM25})});
+    if (r.count === 0) { document.getElementById('searchResults').innerHTML = '<p style="text-align:center;padding:20px;color:var(--text-muted)">未找到相关结果</p>'; return; }
     document.getElementById('searchResults').innerHTML = r.items.map(h => `
       <div class="hit-card">
         <div class="hit-header">
-          <span class="hit-title">${h.heading || (h.title_path || []).join(' > ') || '-'}</span>
+          <span class="hit-title">${esc(h.heading || (h.title_path || []).join(' > ') || '-')}</span>
           <span class="hit-scores">score=${h.score.toFixed(4)} vec=${h.vector_score.toFixed(3)} bm25=${h.bm25_score.toFixed(3)}</span>
         </div>
-        <div class="muted" style="margin-bottom:6px">来源: ${h.source_name || '-'} | ${(h.title_path || []).join(' > ')}</div>
-        <div class="hit-content">${escapeHtml(h.content)}</div>
-      </div>
-    `).join('');
+        <div class="muted" style="margin-bottom:6px">来源: ${esc(h.source_name || '-')} | ${esc((h.title_path || []).join(' > '))}</div>
+        <div class="hit-content">${esc(h.content)}</div>
+      </div>`).join('');
   } catch (e) {
-    document.getElementById('searchResults').innerHTML = '<p style="color:#e74c3c">检索失败: ' + e.message + '</p>';
+    document.getElementById('searchResults').innerHTML = '<p style="color:var(--danger)">检索失败: ' + esc(e.message) + '</p>';
   }
 }
 
-// ===== 配置 =====
 async function loadConfig() {
   try {
     const c = await api('/api/config');
     document.getElementById('configEditor').value = JSON.stringify(c, null, 2);
-  } catch (e) {
-    document.getElementById('configEditor').value = '加载失败: ' + e.message;
-  }
+  } catch (e) { document.getElementById('configEditor').value = '加载失败: ' + e.message; }
 }
 
 async function saveConfig() {
   const text = document.getElementById('configEditor').value;
   let config;
+  try { config = JSON.parse(text); } catch (e) { toast('JSON 格式错误: ' + e.message, 'error'); return; }
   try {
-    config = JSON.parse(text);
-  } catch (e) {
-    toast('JSON 格式错误: ' + e.message, 'error');
-    return;
-  }
-  try {
-    const r = await api('/api/config', {
-      method: 'PUT',
-      body: JSON.stringify({config: config}),
-    });
+    await api('/api/config', {method: 'PUT', body: JSON.stringify({config: config})});
     toast('配置已保存，插件将热重载', 'success');
-  } catch (e) {
-    toast('保存失败: ' + e.message, 'error');
-  }
+  } catch (e) { toast('保存失败: ' + e.message, 'error'); }
 }
 </script>
 </body>
