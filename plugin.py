@@ -15,8 +15,15 @@
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List
+
+# MaiBot 把 plugin.py 作为顶层模块加载，插件目录不在 sys.path 中，
+# 需要手动把自身目录加入搜索路径，让 `import maikb` 能找到同级包。
+_PLUGIN_DIR = Path(__file__).resolve().parent
+if str(_PLUGIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_PLUGIN_DIR))
 
 from maibot_sdk import API, Field, MaiBotPlugin, PluginConfigBase
 
