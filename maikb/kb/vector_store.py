@@ -120,7 +120,9 @@ class VectorIndex:
             else:
                 if vec.shape[1] != self._dim:
                     raise ValueError(
-                        f"向量维度不匹配：期望 {self._dim}，实际 {vec.shape[1]}"
+                        f"向量维度不匹配：索引当前维度 {self._dim}，新向量维度 {vec.shape[1]}。"
+                        f"这通常是因为切换了 embedding 模型。请在 Web UI 删除旧文件后重新导入，"
+                        f"或清空 maikb.db 后重启。"
                     )
                 self._matrix = np.vstack([self._matrix, vec])
             self._chunk_ids.append(chunk_id)

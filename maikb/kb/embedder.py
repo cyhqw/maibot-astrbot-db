@@ -59,12 +59,12 @@ class MaiBotEmbedder:
         embed_fn: Callable[..., Awaitable[Any]],
         *,
         model_name: str = "default",
-        dimension: int = 1024,
+        dimension: int = 0,
         batch_size: int = 32,
     ) -> None:
         self._embed_fn = embed_fn
         self._model_name = model_name
-        self._dimension = dimension
+        self._dimension = dimension  # 0 表示未知，首次 embed 时自动探测
         self._batch_size = batch_size
 
     @property
@@ -75,26 +75,56 @@ class MaiBotEmbedder:
     def dimension(self) -> int:
         return self._dimension
 
+    async def _probe_and_embed(self, text: str, max_retries: int = 3) -> np.ndarray:
+        last_exc: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                result = await self._embed_fn(text=text, model=self._model_name)
+                vec = _extract_vector(result)
+                if vec is None:
+                    raise EmbeddingError(f"MaiBot embed 返回空，原始结果: {result!r}")
+                vec = vec.astype(np.float32)
+                # 首次调用时自动探测维度（配置里的 dimension 可能是猜测值）
+                if self._dimension == 0 and vec.size > 0:
+                    self._dimension = vec.size
+                    logger.info(f"自动探测 embedding 维度: {self._dimension}")
+                return vec
+            except Exception as exc:
+                last_exc = exc
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+        raise last_exc  # type: ignore
+
     async def embed(self, text: str) -> np.ndarray:
-        result = await self._embed_fn(text=text, model=self._model_name)
-        vec = _extract_vector(result)
-        if vec is None:
-            raise EmbeddingError(f"MaiBot embed 返回空，原始结果: {result!r}")
-        return vec.astype(np.float32)
+        return await self._probe_and_embed(text)
 
     async def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
-        # MaiBot 的 embed 当前是单条接口，做并发批处理
+        # MaiBot 的 embed 当前是单条接口，做并发批处理（带重试）
         sem = asyncio.Semaphore(self._batch_size)
+        first_err: Exception | None = None
+        results: list[np.ndarray] = []
 
         async def _one(t: str) -> np.ndarray:
+            nonlocal first_err
             async with sem:
                 try:
-                    return await self.embed(t)
+                    return await self._probe_and_embed(t)
                 except Exception as exc:
-                    logger.warning(f"Embed 失败（用零向量代替）: {exc}")
-                    return np.zeros(self._dimension, dtype=np.float32)
+                    if first_err is None:
+                        first_err = exc
+                    logger.warning(f"Embed 最终失败（重试耗尽）: {exc}")
+                    return None  # type: ignore
 
-        return await asyncio.gather(*[_one(t) for t in texts])
+        gathered = await asyncio.gather(*[_one(t) for t in texts])
+        for v in gathered:
+            if v is None:
+                results.append(np.zeros(self._dimension or 1024, dtype=np.float32))
+            else:
+                results.append(v)
+        # 全部失败时抛错让上层感知；部分失败用零向量占位（该 chunk 向量检索不到，BM25 仍可用）
+        if first_err is not None and all(r is None for r in gathered):
+            raise first_err
+        return results
 
 
 def _extract_vector(result: Any) -> Optional[np.ndarray]:

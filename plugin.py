@@ -110,8 +110,8 @@ class KnowledgeBaseSectionConfig(PluginConfigBase):
         description="embedding 模型名；maibot 模式用 'default' 即跟随 MaiBot 配置",
     )
     embedding_dimension: int = Field(
-        default=1024,
-        description="embedding 向量维度（必须与模型实际维度一致）",
+        default=0,
+        description="embedding 向量维度；maibot 模式留 0 自动探测，openai 模式需手动填",
     )
     embedding_api_key: str = Field(
         default="",

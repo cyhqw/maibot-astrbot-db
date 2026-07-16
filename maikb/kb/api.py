@@ -77,14 +77,15 @@ def init_kb(
 
     provider = str(embedding_config.get("provider", "dummy")).lower()
     model_name = str(embedding_config.get("model", "default"))
-    dimension = int(embedding_config.get("dimension", 1536))
+    dimension = int(embedding_config.get("dimension", 0) or 0)
     batch_size = int(embedding_config.get("batch_size", 16))
 
     if provider == "maibot":
         if maibot_embed_fn is None:
             logger.warning("MaiBot embedder 模式但未提供 embed_fn，降级到 dummy")
-            _kb_embedder = DummyEmbedder(dimension=dimension, model_name=model_name)
+            _kb_embedder = DummyEmbedder(dimension=dimension or 1024, model_name=model_name)
         else:
+            # maibot 模式维度由首次 embed 自动探测，配置值仅作上限参考
             _kb_embedder = MaiBotEmbedder(
                 embed_fn=maibot_embed_fn,
                 model_name=model_name,

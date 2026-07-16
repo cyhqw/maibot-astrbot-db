@@ -54,7 +54,6 @@ def _format_chunks(hits: list) -> str:
         source = h.source_name or "未知来源"
         lines.append(f"### {i}. {h.heading or title_path}")
         lines.append(f"来源: {source} | 章节: {title_path}")
-        lines.append(f"相关度: vector={h.vector_score:.3f} bm25={h.bm25_score:.3f}")
         lines.append("")
         lines.append(h.content)
         lines.append("")
