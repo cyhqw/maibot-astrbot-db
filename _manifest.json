@@ -36,5 +36,10 @@
     "config.get",
     "llm.embed"
   ],
+  "i18n": {
+    "default_locale": "zh-CN",
+    "locales_path": "_locales",
+    "supported_locales": ["zh-CN"]
+  },
   "id": "maibot-team.maikb"
 }

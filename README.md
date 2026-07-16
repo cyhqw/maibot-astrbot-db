@@ -44,20 +44,20 @@ data/plugins/maibot-team.maikb/
 
 ### 2. 配置 Embedding
 
-编辑 `config.toml`，在 `[knowledge_base]` 段选一种 embedding 提供方：
+编辑 `config.toml`，在 `[knowledge_base]` 段配置 embedding：
 
 ```toml
 [knowledge_base]
 enabled = true
 auto_ingest_on_start = true
 
-# 推荐：用 MaiBot 自己的 embedding 服务
+# 默认用 MaiBot 自带的 embedding 服务，零配置
 embedding_provider = "maibot"
-embedding_model = "text-embedding-3-small"
-embedding_dimension = 1536
 
-# 或用 OpenAI 兼容接口
+# 也可以用 OpenAI 兼容接口（需要手动配置 api_key）
 # embedding_provider = "openai"
+# embedding_model = "text-embedding-3-small"
+# embedding_dimension = 1536
 # embedding_api_key = "sk-..."
 # embedding_base_url = "https://api.openai.com/v1"
 
@@ -86,7 +86,7 @@ default_category = "genshin"  # 给文件打分类标签
 
 ## 常见问题
 
-**检索结果不相关** — 检查 `embedding_provider` 是否为 `maibot` 或 `openai`。`dummy` 模式只有哈希伪随机向量，没有语义能力。
+**检索结果不相关** — 默认用 MaiBot 自带 embedding 服务（`embedding_provider = "maibot"`），无需额外配置。如果改成 `dummy` 模式，只有哈希伪随机向量，没有语义能力。
 
 **中文短查询（2 字以下）检索不到** — trigram 分词器要求 FTS5 查询 ≥ 3 字符。短查询会自动回退 `LIKE` 子串匹配，但仍建议多写几个字提高命中率。
 

@@ -78,17 +78,17 @@ class KnowledgeBaseSectionConfig(PluginConfigBase):
     max_chars: int = Field(default=1500, description="单 chunk 最大字符数")
     min_chars: int = Field(default=80, description="单 chunk 最小字符数（小于此值合并到上一个）")
 
-    # Embedding 配置
+    # Embedding 配置（默认用 MaiBot 自带服务，零配置）
     embedding_provider: str = Field(
-        default="dummy",
-        description="embedding 提供方：maibot（推荐，走 MaiBot llm.embed）/ openai（兼容接口）/ dummy（仅测试）",
+        default="maibot",
+        description="embedding 提供方：maibot（默认，走 MaiBot llm.embed，零配置）/ openai（兼容接口）/ dummy（仅测试）",
     )
     embedding_model: str = Field(
-        default="text-embedding-3-small",
-        description="embedding 模型名（maibot/openai 模式用）",
+        default="default",
+        description="embedding 模型名；maibot 模式用 'default' 即跟随 MaiBot 配置",
     )
     embedding_dimension: int = Field(
-        default=1536,
+        default=1024,
         description="embedding 向量维度（必须与模型实际维度一致）",
     )
     embedding_api_key: str = Field(
