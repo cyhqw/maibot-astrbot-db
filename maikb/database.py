@@ -718,6 +718,39 @@ class MaiKBDatabase:
 
         return await self._run_in_tx(_op)
 
+    async def delete_chunk_by_id(self, chunk_id: str) -> Optional[str]:
+        """删除单个 chunk + FTS 索引，并同步更新所属文件的冗余统计字段。
+
+        返回所属 file_id（便于上层同步内存向量索引、刷新统计）；
+        若 chunk 不存在，返回 None。
+        """
+
+        async def _op(session: AsyncSession) -> Optional[str]:
+            stmt = select(KnowledgeChunk).where(KnowledgeChunk.chunk_id == chunk_id)
+            c = (await session.execute(stmt)).scalar_one_or_none()
+            if c is None:
+                return None
+            file_id = c.file_id
+
+            await session.delete(c)
+            await session.execute(
+                text("DELETE FROM kb_chunks_fts WHERE chunk_id = :cid"),
+                {"cid": chunk_id},
+            )
+
+            # 重新统计该文件的 chunk_count 和 total_tokens
+            rest_stmt = select(KnowledgeChunk).where(KnowledgeChunk.file_id == file_id)
+            rest = (await session.execute(rest_stmt)).scalars().all()
+            f_stmt = select(KnowledgeFile).where(KnowledgeFile.file_id == file_id)
+            f = (await session.execute(f_stmt)).scalar_one_or_none()
+            if f is not None:
+                f.chunk_count = len(rest)
+                f.total_tokens = sum(c2.token_count for c2 in rest)
+                session.add(f)
+            return file_id
+
+        return await self._run_in_tx(_op)
+
     async def update_chunk_embedding(
         self,
         chunk_id: str,
