@@ -29,6 +29,7 @@ _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$", re.MULTILINE)
 _DEFAULT_TARGET_CHARS = 500
 _DEFAULT_MAX_CHARS = 1500
 _DEFAULT_MIN_CHARS = 80  # 低于此长度的 chunk 不单独输出，合并到下一个
+_DEFAULT_OVERLAP_CHARS = 100  # 相邻 chunk 之间的重叠字符数
 
 
 @dataclass
@@ -145,6 +146,7 @@ def _chunk_section_by_paragraphs(
     target_chars: int,
     max_chars: int,
     min_chars: int,
+    overlap_chars: int = 0,
 ) -> list[Chunk]:
     """在 section 内按段落累积切分。
 
@@ -152,6 +154,7 @@ def _chunk_section_by_paragraphs(
     - 累积到 >= target_chars 时输出一个 chunk
     - 单段落超过 max_chars 时硬切（带边界回退）
     - 短 chunk 合并到下一个
+    - overlap_chars > 0 时，相邻 chunk 共享末尾段落（在段落边界对齐，不截断段落）
     """
 
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", section.content) if p.strip()]
@@ -168,6 +171,9 @@ def _chunk_section_by_paragraphs(
             # flush 当前 buffer
             if buffer and buffer_chars >= min_chars:
                 chunks.append(_build_chunk(section, "\n\n".join(buffer)))
+                # overlap: 保留末尾段落
+                buffer, buffer_chars = _carry_overlap(buffer, buffer_chars, overlap_chars)
+            else:
                 buffer = []
                 buffer_chars = 0
 
@@ -183,8 +189,8 @@ def _chunk_section_by_paragraphs(
         # 达到目标大小，输出
         if buffer_chars >= target_chars:
             chunks.append(_build_chunk(section, "\n\n".join(buffer)))
-            buffer = []
-            buffer_chars = 0
+            # overlap: 保留末尾段落
+            buffer, buffer_chars = _carry_overlap(buffer, buffer_chars, overlap_chars)
 
     # 收尾
     if buffer:
@@ -200,6 +206,24 @@ def _chunk_section_by_paragraphs(
             chunks.append(_build_chunk(section, last_text))
 
     return chunks
+
+
+def _carry_overlap(
+    buffer: list[str], buffer_chars: int, overlap_chars: int
+) -> tuple[list[str], int]:
+    """从当前 buffer 末尾保留 overlap_chars 字符的段落，作为下一个 chunk 的起始。"""
+
+    if overlap_chars <= 0 or not buffer:
+        return [], 0
+    carry: list[str] = []
+    carry_chars = 0
+    for para in reversed(buffer):
+        p_len = len(para) + 2
+        if carry_chars + p_len > overlap_chars and carry:
+            break
+        carry.insert(0, para)
+        carry_chars += p_len
+    return carry, carry_chars
 
 
 def _build_chunk(section: _Section, content: str) -> Chunk:
@@ -246,6 +270,7 @@ def chunk_markdown(
     target_chars: int = _DEFAULT_TARGET_CHARS,
     max_chars: int = _DEFAULT_MAX_CHARS,
     min_chars: int = _DEFAULT_MIN_CHARS,
+    overlap_chars: int = _DEFAULT_OVERLAP_CHARS,
 ) -> list[Chunk]:
     """切分 markdown 文本。
 
@@ -254,6 +279,7 @@ def chunk_markdown(
         target_chars: 目标 chunk 字符数（实际会略大，按段落边界对齐）
         max_chars: 单 chunk 最大字符数（超过会硬切）
         min_chars: 最小 chunk 字符数（小于此值的 chunk 会合并到上一个）
+        overlap_chars: 相邻 chunk 之间的重叠字符数（在段落边界对齐）
 
     Returns:
         List[Chunk]，每个 chunk 已填好 chunk_index / char_count / token_count / content_hash
@@ -263,7 +289,7 @@ def chunk_markdown(
     chunks: list[Chunk] = []
     for section in sections:
         chunks.extend(
-            _chunk_section_by_paragraphs(section, target_chars, max_chars, min_chars)
+            _chunk_section_by_paragraphs(section, target_chars, max_chars, min_chars, overlap_chars)
         )
 
     # 重新编号 chunk_index
@@ -279,11 +305,12 @@ def chunk_plain_text(
     target_chars: int = _DEFAULT_TARGET_CHARS,
     max_chars: int = _DEFAULT_MAX_CHARS,
     min_chars: int = _DEFAULT_MIN_CHARS,
+    overlap_chars: int = _DEFAULT_OVERLAP_CHARS,
 ) -> list[Chunk]:
     """切分纯文本（无 markdown 标题）。"""
 
     section = _Section(title_path=[], heading="", content=text.strip())
-    chunks = _chunk_section_by_paragraphs(section, target_chars, max_chars, min_chars)
+    chunks = _chunk_section_by_paragraphs(section, target_chars, max_chars, min_chars, overlap_chars)
     for i, c in enumerate(chunks):
         c.chunk_index = i
     return chunks
@@ -296,12 +323,13 @@ def chunk_file(
     target_chars: int = _DEFAULT_TARGET_CHARS,
     max_chars: int = _DEFAULT_MAX_CHARS,
     min_chars: int = _DEFAULT_MIN_CHARS,
+    overlap_chars: int = _DEFAULT_OVERLAP_CHARS,
 ) -> list[Chunk]:
     """根据文件扩展名自动选择切分策略。"""
 
     if file_path.lower().endswith(".md") or file_path.lower().endswith(".markdown"):
-        return chunk_markdown(text, target_chars=target_chars, max_chars=max_chars, min_chars=min_chars)
-    return chunk_plain_text(text, target_chars=target_chars, max_chars=max_chars, min_chars=min_chars)
+        return chunk_markdown(text, target_chars=target_chars, max_chars=max_chars, min_chars=min_chars, overlap_chars=overlap_chars)
+    return chunk_plain_text(text, target_chars=target_chars, max_chars=max_chars, min_chars=min_chars, overlap_chars=overlap_chars)
 
 
 __all__ = [

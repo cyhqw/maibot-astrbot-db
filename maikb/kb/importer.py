@@ -77,6 +77,7 @@ class KnowledgeBaseImporter:
         target_chars: int = 500,
         max_chars: int = 1500,
         min_chars: int = 80,
+        overlap_chars: int = 100,
         embed_batch_size: int = 16,
         default_category: Optional[str] = None,
     ) -> None:
@@ -87,6 +88,7 @@ class KnowledgeBaseImporter:
         self._target_chars = target_chars
         self._max_chars = max_chars
         self._min_chars = min_chars
+        self._overlap_chars = overlap_chars
         self._embed_batch_size = embed_batch_size
         self._default_category = default_category
 
@@ -185,6 +187,7 @@ class KnowledgeBaseImporter:
             target_chars=self._target_chars,
             max_chars=self._max_chars,
             min_chars=self._min_chars,
+            overlap_chars=self._overlap_chars,
         )
 
         if not chunks:

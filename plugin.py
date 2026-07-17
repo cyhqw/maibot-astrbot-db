@@ -99,6 +99,7 @@ class KnowledgeBaseSectionConfig(PluginConfigBase):
     target_chars: int = Field(default=500, description="目标 chunk 字符数")
     max_chars: int = Field(default=1500, description="单 chunk 最大字符数")
     min_chars: int = Field(default=80, description="单 chunk 最小字符数（小于此值合并到上一个）")
+    overlap_chars: int = Field(default=100, description="相邻 chunk 之间的重叠字符数（在段落边界对齐）")
 
     # Embedding 配置（默认用 MaiBot 自带服务，零配置）
     embedding_provider: str = Field(
@@ -316,6 +317,10 @@ class MaiKBPlugin(MaiBotPlugin, KbApiMixin, InterceptorMixin, InjectorMixin):
             "base_url": kb_cfg.embedding_base_url,
             "batch_size": kb_cfg.embedding_batch_size,
             "default_category": kb_cfg.default_category or None,
+            "target_chars": kb_cfg.target_chars,
+            "max_chars": kb_cfg.max_chars,
+            "min_chars": kb_cfg.min_chars,
+            "overlap_chars": kb_cfg.overlap_chars,
         }
 
         # MaiBot 模式下传入 embed 函数

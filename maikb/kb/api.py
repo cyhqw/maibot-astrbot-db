@@ -116,6 +116,11 @@ def init_kb(
         vector_index=_kb_vector_index,
         embedder=_kb_embedder,
         knowledge_dir=knowledge_dir,
+        target_chars=int(embedding_config.get("target_chars", 500)),
+        max_chars=int(embedding_config.get("max_chars", 1500)),
+        min_chars=int(embedding_config.get("min_chars", 80)),
+        overlap_chars=int(embedding_config.get("overlap_chars", 100)),
+        embed_batch_size=batch_size,
         default_category=embedding_config.get("default_category"),
     )
     _kb_searcher = HybridSearcher(get_db(), _kb_vector_index, _kb_embedder)

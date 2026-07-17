@@ -716,6 +716,7 @@ const cfgSchema = [
     {k:'target_chars',l:'目标切片字符数',t:'int'},
     {k:'max_chars',l:'最大切片字符数',t:'int'},
     {k:'min_chars',l:'最小切片字符数',t:'int'},
+    {k:'overlap_chars',l:'切片重叠字符数',t:'int',d:'相邻 chunk 共享的字符数'},
     {k:'embedding_provider',l:'Embedding 提供方',t:'select',opts:[['maibot','MaiBot（默认）'],['openai','OpenAI 兼容'],['dummy','Dummy（测试）']]},
     {k:'embedding_model',l:'Embedding 模型',t:'text',d:'maibot 模式填 default'},
     {k:'embedding_dimension',l:'Embedding 维度',t:'int',d:'0 = 自动探测'},

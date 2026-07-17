@@ -117,7 +117,7 @@ def test_short_chunk_merged_to_previous():
 
 短。
 """
-    chunks = chunk_markdown(md, target_chars=30, max_chars=500, min_chars=20)
+    chunks = chunk_markdown(md, target_chars=30, max_chars=500, min_chars=20, overlap_chars=0)
     # 短段落应该合并到第一个 chunk
     assert len(chunks) == 1
     assert "短" in chunks[0].content
@@ -160,3 +160,48 @@ def test_no_content_returns_empty():
 
     assert chunk_markdown("") == []
     assert chunk_markdown("   \n\n  \n") == []
+
+
+def test_overlap_between_chunks():
+    """overlap_chars > 0 时相邻 chunk 应有共享段落。"""
+
+    md = """# 测试
+
+段落一，这是一段足够长的文字，需要超过目标字符数才能触发切分。
+
+段落二，这是第二段，同样需要足够长才能触发切分。
+
+段落三，这是第三段，确保能切出至少两个 chunk。
+"""
+    chunks = chunk_markdown(md, target_chars=30, max_chars=500, min_chars=5, overlap_chars=50)
+    assert len(chunks) >= 2
+    # 第二个 chunk 的开头应该包含第一个 chunk 末尾的段落
+    # 段落二应该同时出现在 chunk[0] 和 chunk[1] 中
+    if len(chunks) >= 2:
+        # 找到在两个 chunk 中都出现的段落
+        overlap_found = False
+        for line in chunks[0].content.split("\n\n"):
+            if line.strip() and line.strip() in chunks[1].content:
+                overlap_found = True
+                break
+        assert overlap_found, "相邻 chunk 之间应有重叠段落"
+
+
+def test_zero_overlap_no_sharing():
+    """overlap_chars=0 时相邻 chunk 不共享内容。"""
+
+    md = """# 测试
+
+段落一，这是一段足够长的文字，需要超过目标字符数才能触发切分。
+
+段落二，这是第二段，同样需要足够长才能触发切分。
+
+段落三，这是第三段，确保能切出至少两个 chunk。
+"""
+    chunks = chunk_markdown(md, target_chars=30, max_chars=500, min_chars=5, overlap_chars=0)
+    assert len(chunks) >= 2
+    # 段落二不应同时出现在两个 chunk 中
+    if len(chunks) >= 2:
+        for line in chunks[0].content.split("\n\n"):
+            if line.strip():
+                assert line.strip() not in chunks[1].content, "overlap=0 时不应有共享段落"
