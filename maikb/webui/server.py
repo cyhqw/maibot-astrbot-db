@@ -537,253 +537,235 @@ _INDEX_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 :root {
-  --bg: #f5f7fa; --surface: #ffffff; --surface-2: #f8f9fc; --surface-3: #eef1f6;
-  --text: #2c3e50; --text-muted: #888; --border: #e8ecf3;
-  --brand: #667eea; --brand-dark: #5568d3; --danger: #e74c3c; --danger-dark: #c0392b;
-  --ok: #27ae60; --warn: #f39c12;
-  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --bg: #f0f0f0; --surface: #fff; --surface-2: #f7f7f8; --surface-3: #e8e8ea;
+  --text: #1a1a1a; --text-2: #555; --text-3: #999; --border: #ddd;
+  --accent: #2563eb; --accent-h: #1d4ed8; --danger: #dc2626; --danger-h: #b91c1c;
+  --ok: #16a34a; --warn: #d97706;
 }
 :root[data-theme="dark"] {
-  --bg: #1a1b26; --surface: #24283b; --surface-2: #2d3250; --surface-3: #3a3f5c;
-  --text: #c0caf5; --text-muted: #8b95b8; --border: #3a3f5c;
-  --brand: #7c8ff0; --brand-dark: #667eea; --danger: #e06c75; --danger-dark: #c5505a;
-  --ok: #98c379; --warn: #e5c07b;
-  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --bg: #16161a; --surface: #1e1e24; --surface-2: #25252c; --surface-3: #33333c;
+  --text: #e4e4e7; --text-2: #a1a1aa; --text-3: #71717a; --border: #33333c;
+  --accent: #3b82f6; --accent-h: #2563eb; --danger: #ef4444; --danger-h: #dc2626;
+  --ok: #22c55e; --warn: #f59e0b;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: var(--bg); color: var(--text); line-height: 1.6; transition: background 0.2s, color 0.2s;
-}
-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white; padding: 18px 30px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-  display: flex; align-items: center; justify-content: space-between;
-}
-header h1 { font-size: 21px; margin-bottom: 2px; }
-header .subtitle { font-size: 13px; opacity: 0.9; }
-.theme-btn {
-  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3); color: white;
-  padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 14px;
-}
-.theme-btn:hover { background: rgba(255,255,255,0.28); }
-.container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
-.tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--surface); padding: 6px; border-radius: 8px; box-shadow: var(--shadow); flex-wrap: wrap; }
-.tab {
-  padding: 8px 18px; background: transparent; border: none; cursor: pointer; border-radius: 6px;
-  font-size: 14px; color: var(--text-muted); transition: all 0.2s;
-}
-.tab:hover { background: var(--surface-3); }
-.tab.active { background: var(--brand); color: white; }
-.panel { background: var(--surface); border-radius: 8px; padding: 24px; box-shadow: var(--shadow); margin-bottom: 16px; }
-.panel h2 { font-size: 16px; margin-bottom: 16px; color: var(--text); }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-.stat-card { background: var(--surface-2); padding: 16px; border-radius: 8px; border-left: 3px solid var(--brand); }
-.stat-card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-.stat-card .value { font-size: 24px; font-weight: 600; color: var(--text); }
-.stat-card .unit { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-th { background: var(--surface-2); font-weight: 600; color: var(--text-muted); }
-tr:hover { background: var(--surface-2); }
-.status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
-.status-ready { background: rgba(39,174,96,0.15); color: var(--ok); }
-.status-failed { background: rgba(231,76,60,0.15); color: var(--danger); }
-.status-pending { background: rgba(243,156,18,0.15); color: var(--warn); }
-.status-processing { background: rgba(102,126,234,0.15); color: var(--brand); }
-.cat-badge { display: inline-block; padding: 1px 7px; border-radius: 8px; font-size: 11px; background: var(--surface-3); color: var(--text-muted); }
-.btn { padding: 6px 14px; background: var(--brand); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; transition: background 0.2s; }
-.btn:hover { background: var(--brand-dark); }
+body { font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+header { background: #1e293b; color: #e2e8f0; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid var(--accent); }
+header h1 { font-size: 16px; font-weight: 600; }
+header .sub { font-size: 12px; color: #94a3b8; }
+.theme-btn { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.theme-btn:hover { border-color: #64748b; color: #cbd5e1; }
+.wrap { max-width: 1200px; margin: 16px auto; padding: 0 16px; }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar input, .toolbar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; background: var(--surface); color: var(--text); }
+.toolbar input:focus { outline: none; border-color: var(--accent); }
+.btn { padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; background: var(--accent); color: #fff; }
+.btn:hover { background: var(--accent-h); }
 .btn-danger { background: var(--danger); }
-.btn-danger:hover { background: var(--danger-dark); }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
-.btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.btn-danger:hover { background: var(--danger-h); }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
 .btn-ghost:hover { background: var(--surface-3); }
-.search-box { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.search-box input, .search-box select, .filter-input, .filter-select {
-  padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px;
-  background: var(--surface); color: var(--text);
-}
-.search-box input:focus, .filter-input:focus { outline: none; border-color: var(--brand); }
-.hit-card { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; background: var(--surface-2); }
-.hit-card .hit-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); }
-.hit-card .hit-title { font-weight: 600; color: var(--text); font-size: 14px; }
-.hit-card .hit-content { font-size: 13px; color: var(--text); white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 4px; border: 1px solid var(--border); }
-.hit-card .hit-scores { font-family: monospace; font-size: 11px; color: var(--text-muted); }
-.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: var(--text); color: var(--surface); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1000; opacity: 0; transition: opacity 0.3s; }
+.btn-sm { padding: 3px 8px; font-size: 12px; }
+.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+.tab { padding: 8px 16px; background: transparent; border: none; cursor: pointer; font-size: 13px; color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 20px; margin-bottom: 16px; }
+.panel-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; color: var(--text); }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.stat { background: var(--surface-2); padding: 12px; border-radius: 4px; border-left: 2px solid var(--accent); }
+.stat .l { font-size: 11px; color: var(--text-3); }
+.stat .v { font-size: 20px; font-weight: 600; }
+.stat .u { font-size: 11px; color: var(--text-3); margin-left: 3px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-3); font-weight: 500; font-size: 12px; }
+tr:hover td { background: var(--surface-2); }
+.badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+.b-ready { background: rgba(22,163,74,0.12); color: var(--ok); }
+.b-failed { background: rgba(220,38,38,0.12); color: var(--danger); }
+.b-pending, .b-processing { background: rgba(217,119,6,0.12); color: var(--warn); }
+.b-cat { background: var(--surface-3); color: var(--text-2); }
+.result { border: 1px solid var(--border); border-radius: 4px; padding: 10px 14px; margin-bottom: 10px; background: var(--surface-2); }
+.result .r-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.result .r-title { font-weight: 500; font-size: 13px; }
+.result .r-meta { font-size: 11px; color: var(--text-3); }
+.result .r-body { font-size: 13px; white-space: pre-wrap; max-height: 180px; overflow-y: auto; background: var(--surface); padding: 8px; border-radius: 3px; border: 1px solid var(--border); }
+.result .r-scores { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-3); }
+.muted { color: var(--text-3); font-size: 12px; }
+.toast { position: fixed; bottom: 16px; right: 16px; padding: 10px 16px; border-radius: 4px; z-index: 1000; opacity: 0; transition: opacity 0.2s; font-size: 13px; }
 .toast.show { opacity: 1; }
-.toast.error { background: var(--danger); color: white; }
-.toast.success { background: var(--ok); color: white; }
-.loading { text-align: center; padding: 40px; color: var(--text-muted); }
-.spinner { border: 3px solid var(--surface-3); border-top: 3px solid var(--brand); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
-@keyframes spin { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
-.actions-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
-.config-editor { width: 100%; min-height: 400px; padding: 12px; font-family: "SF Mono", Monaco, "Cascadia Code", monospace; font-size: 13px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text); resize: vertical; }
-.muted { color: var(--text-muted); font-size: 12px; }
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; justify-content: center; align-items: flex-start; padding: 30px 20px; overflow-y: auto; }
-.modal-overlay.show { display: flex; }
-.modal { background: var(--surface); border-radius: 8px; max-width: 900px; width: 100%; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.modal-header h2 { font-size: 16px; color: var(--text); }
-.modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text-muted); }
+.toast.error { background: var(--danger); color: #fff; }
+.toast.success { background: var(--ok); color: #fff; }
+.toast.info { background: var(--text); color: var(--surface); }
+.loading { text-align: center; padding: 30px; color: var(--text-3); }
+.spinner { border: 2px solid var(--border); border-top: 2px solid var(--accent); border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 999; justify-content: center; align-items: flex-start; padding: 30px 16px; overflow-y: auto; }
+.modal-bg.show { display: flex; }
+.modal { background: var(--surface); border-radius: 6px; max-width: 800px; width: 100%; padding: 20px; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.modal-head h2 { font-size: 14px; font-weight: 600; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-3); }
 .modal-close:hover { color: var(--text); }
-.upload-wrap { display: inline-flex; align-items: center; gap: 6px; }
-input[type=file] { display: none; }
+/* form */
+.form-sec { margin-bottom: 20px; }
+.form-sec-title { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.form-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.form-row label { width: 160px; font-size: 13px; color: var(--text-2); flex-shrink: 0; }
+.form-row input[type=text], .form-row input[type=number], .form-row select { flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; background: var(--surface); color: var(--text); }
+.form-row input:focus, .form-row select:focus { outline: none; border-color: var(--accent); }
+.form-row input[type=checkbox] { width: 16px; height: 16px; }
+.form-row .desc { font-size: 11px; color: var(--text-3); }
+.form-row .ro { background: var(--surface-2); color: var(--text-3); }
 </style>
 </head>
 <body>
 <header>
   <div>
-    <h1>📚 MaiBot · 知识库管理</h1>
-    <div class="subtitle">MaiBot 插件 · 向量/BM25 混合检索 RAG</div>
+    <h1>MaiBot 知识库管理</h1>
+    <div class="sub">向量 / BM25 混合检索</div>
   </div>
-  <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
+  <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">深色</button>
 </header>
-
-<div class="container">
-  <div class="actions-bar">
-    <span class="muted">Token (如配置):</span>
-    <input type="password" id="tokenInput" class="filter-input" placeholder="留空则无认证" style="width:200px">
-    <button class="btn btn-sm" onclick="saveToken()">保存</button>
+<div class="wrap">
+  <div class="toolbar">
+    <span class="muted">Token:</span>
+    <input type="password" id="tokenInput" placeholder="无认证则留空" style="width:180px">
+    <button class="btn btn-sm" onclick="saveToken()">确定</button>
     <span style="flex:1"></span>
-    <button class="btn btn-sm btn-ghost" onclick="refreshAll()">🔄 刷新</button>
+    <button class="btn btn-sm btn-ghost" onclick="refreshAll()">刷新</button>
   </div>
-
   <div class="tabs">
-    <button class="tab active" onclick="switchTab(this, 'stats')">📊 统计</button>
-    <button class="tab" onclick="switchTab(this, 'files')">📁 文件</button>
-    <button class="tab" onclick="switchTab(this, 'search')">🔍 检索测试</button>
-    <button class="tab" onclick="switchTab(this, 'config')">⚙️ 配置</button>
+    <button class="tab active" onclick="switchTab(this,'stats')">统计</button>
+    <button class="tab" onclick="switchTab(this,'files')">文件</button>
+    <button class="tab" onclick="switchTab(this,'search')">检索</button>
+    <button class="tab" onclick="switchTab(this,'config')">配置</button>
   </div>
 
   <div id="panel-stats" class="panel">
-    <h2>知识库统计</h2>
-    <div id="statsContent" class="stats-grid"><div class="loading"><div class="spinner"></div>加载中...</div></div>
-    <div style="margin-top:20px">
-      <button class="btn" onclick="ingest(false)">📥 增量导入</button>
-      <button class="btn btn-danger" onclick="ingest(true)" style="margin-left:8px">🔧 强制全量重建</button>
+    <div class="panel-title">知识库概览</div>
+    <div id="statsContent" class="stats"><div class="loading"><div class="spinner"></div>加载中</div></div>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn" onclick="ingest(false)">增量导入</button>
+      <button class="btn btn-danger" onclick="ingest(true)">强制全量重建</button>
     </div>
   </div>
 
   <div id="panel-files" class="panel" style="display:none">
-    <h2>知识库文件</h2>
-    <div class="actions-bar">
-      <input type="text" id="fileFilter" class="filter-input" placeholder="按文件名筛选..." style="flex:1;min-width:160px">
-      <select id="fileStatusFilter" class="filter-select">
-        <option value="">全部状态</option>
-        <option value="ready">ready</option>
-        <option value="failed">failed</option>
-        <option value="pending">pending</option>
-        <option value="processing">processing</option>
-      </select>
-      <select id="fileCategoryFilter" class="filter-select">
-        <option value="">全部分类</option>
-      </select>
+    <div class="panel-title">文件管理</div>
+    <div class="toolbar">
+      <input type="text" id="fileFilter" placeholder="筛选文件名" style="flex:1;min-width:120px">
+      <select id="fileStatusFilter"><option value="">全部状态</option><option value="ready">ready</option><option value="failed">failed</option></select>
+      <select id="fileCategoryFilter"><option value="">全部分类</option></select>
       <button class="btn btn-sm" onclick="loadFiles()">筛选</button>
       <span style="flex:1"></span>
-      <div class="upload-wrap">
-        <input type="file" id="uploadInput" accept=".md,.markdown,.txt" onchange="uploadFile(event)">
-        <button class="btn btn-sm" onclick="document.getElementById('uploadInput').click()">📤 上传文件</button>
-      </div>
+      <input type="file" id="uploadInput" accept=".md,.markdown,.txt" onchange="uploadFile(event)" style="display:none">
+      <button class="btn btn-sm" onclick="document.getElementById('uploadInput').click()">上传</button>
     </div>
     <div style="overflow-x:auto">
-      <table>
-        <thead><tr><th>文件名</th><th>分类</th><th>状态</th><th>Chunks</th><th>Tokens</th><th>大小</th><th>最后导入</th><th>操作</th></tr></thead>
-        <tbody id="filesTable"><tr><td colspan="8" class="loading"><div class="spinner"></div>加载中...</td></tr></tbody>
-      </table>
+      <table><thead><tr><th>文件名</th><th>分类</th><th>状态</th><th>Chunks</th><th>Tokens</th><th>大小</th><th>导入时间</th><th>操作</th></tr></thead>
+      <tbody id="filesTable"><tr><td colspan="8" class="loading"><div class="spinner"></div>加载中</td></tr></tbody></table>
     </div>
   </div>
 
   <div id="panel-search" class="panel" style="display:none">
-    <h2>检索测试</h2>
-    <div class="search-box">
-      <input type="text" id="searchQuery" placeholder="输入查询，如：法涅斯是谁" onkeydown="if(event.key==='Enter')doSearch()" style="flex:1;min-width:200px">
-      <select id="searchMode" class="filter-select">
-        <option value="hybrid">混合（推荐）</option>
-        <option value="vector">仅向量</option>
-        <option value="bm25">仅 BM25</option>
-      </select>
-      <select id="searchTopK" class="filter-select">
-        <option value="3">Top 3</option>
-        <option value="5" selected>Top 5</option>
-        <option value="10">Top 10</option>
-      </select>
-      <button class="btn" onclick="doSearch()">🔍 检索</button>
+    <div class="panel-title">检索测试</div>
+    <div class="toolbar">
+      <input type="text" id="searchQuery" placeholder="输入查询内容" onkeydown="if(event.key==='Enter')doSearch()" style="flex:1;min-width:180px">
+      <select id="searchMode"><option value="hybrid">混合</option><option value="vector">仅向量</option><option value="bm25">仅 BM25</option></select>
+      <select id="searchTopK"><option value="3">Top 3</option><option value="5" selected>Top 5</option><option value="10">Top 10</option></select>
+      <button class="btn" onclick="doSearch()">检索</button>
     </div>
     <div id="searchResults"></div>
   </div>
 
   <div id="panel-config" class="panel" style="display:none">
-    <h2>插件配置</h2>
-    <p class="muted" style="margin-bottom:12px">编辑 JSON 后点击"保存配置"，将写入 config.toml 并触发插件热重载。</p>
-    <textarea id="configEditor" class="config-editor" placeholder="加载中..."></textarea>
-    <div style="margin-top:12px">
-      <button class="btn" onclick="saveConfig()">💾 保存配置</button>
-      <button class="btn btn-sm btn-ghost" onclick="loadConfig()" style="margin-left:8px">🔄 重新加载</button>
+    <div class="panel-title">插件配置</div>
+    <div id="configForm"><div class="loading"><div class="spinner"></div>加载中</div></div>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn" onclick="saveConfig()">保存配置</button>
+      <button class="btn btn-ghost" onclick="loadConfig()">重新加载</button>
     </div>
+    <p class="muted" style="margin-top:8px">保存后写入 config.toml，插件自动热重载。</p>
   </div>
 </div>
 
-<div id="chunkModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+<div id="chunkModal" class="modal-bg" onclick="if(event.target===this)closeModal()">
   <div class="modal">
-    <div class="modal-header">
-      <h2 id="modalTitle">切片详情</h2>
-      <button class="modal-close" onclick="closeModal()">×</button>
-    </div>
+    <div class="modal-head"><h2 id="modalTitle">切片详情</h2><button class="modal-close" onclick="closeModal()">&times;</button></div>
     <div id="modalBody"></div>
   </div>
 </div>
-
 <div id="toast" class="toast"></div>
 
 <script>
-let savedToken = localStorage.getItem('maikb_token') || '';
-let savedTheme = localStorage.getItem('maikb_theme') || '';
-if (savedTheme === 'dark') { document.documentElement.setAttribute('data-theme','dark'); document.getElementById('themeBtn').textContent = '☀️'; }
-document.getElementById('tokenInput').value = savedToken;
+let token = localStorage.getItem('maikb_token') || '';
+let theme = localStorage.getItem('maikb_theme') || '';
+if (theme === 'dark') { document.documentElement.setAttribute('data-theme','dark'); document.getElementById('themeBtn').textContent = '浅色'; }
+document.getElementById('tokenInput').value = token;
 refreshAll();
 
+const cfgSchema = [
+  {s:'plugin',l:'插件',fields:[
+    {k:'enabled',l:'启用插件',t:'bool'},
+    {k:'config_version',l:'配置版本',t:'text',ro:true},
+  ]},
+  {s:'database',l:'数据库',fields:[
+    {k:'db_filename',l:'数据库文件名',t:'text'},
+    {k:'auto_backup_on_start',l:'启动时自动备份',t:'bool'},
+  ]},
+  {s:'knowledge_base',l:'知识库',fields:[
+    {k:'enabled',l:'启用知识库',t:'bool'},
+    {k:'knowledge_dir',l:'源文件目录',t:'text',d:'相对于插件 data 目录'},
+    {k:'auto_ingest_on_start',l:'启动时自动导入',t:'bool'},
+    {k:'target_chars',l:'目标切片字符数',t:'int'},
+    {k:'max_chars',l:'最大切片字符数',t:'int'},
+    {k:'min_chars',l:'最小切片字符数',t:'int'},
+    {k:'embedding_provider',l:'Embedding 提供方',t:'select',opts:[['maibot','MaiBot（默认）'],['openai','OpenAI 兼容'],['dummy','Dummy（测试）']]},
+    {k:'embedding_model',l:'Embedding 模型',t:'text',d:'maibot 模式填 default'},
+    {k:'embedding_dimension',l:'Embedding 维度',t:'int',d:'0 = 自动探测'},
+    {k:'embedding_api_key',l:'API Key',t:'text',d:'openai 模式必填'},
+    {k:'embedding_base_url',l:'API Base URL',t:'text',d:'openai 模式'},
+    {k:'embedding_batch_size',l:'批量大小',t:'int'},
+    {k:'default_category',l:'默认分类',t:'text'},
+  ]},
+  {s:'interceptor',l:'消息拦截',fields:[
+    {k:'enabled',l:'启用前缀拦截',t:'bool'},
+    {k:'prefixes',l:'拦截前缀',t:'list',d:'逗号分隔'},
+    {k:'log_blocked',l:'记录被拦截消息',t:'bool'},
+  ]},
+  {s:'injector',l:'自动注入',fields:[
+    {k:'enabled',l:'启用自动注入',t:'bool'},
+    {k:'min_score',l:'RRF 分数阈值',t:'float'},
+    {k:'min_vector_score',l:'向量相似度阈值',t:'float'},
+    {k:'top_k',l:'注入条数',t:'int'},
+    {k:'max_chars',l:'注入最大字符数',t:'int'},
+    {k:'dedup_lookback',l:'去重回溯消息数',t:'int'},
+    {k:'skip_if_tool_called',l:'LLM 已调 Tool 时跳过',t:'bool'},
+  ]},
+  {s:'webui',l:'Web UI',fields:[
+    {k:'enabled',l:'启用 Web UI',t:'bool'},
+    {k:'host',l:'监听地址',t:'text'},
+    {k:'port',l:'监听端口',t:'int'},
+    {k:'token',l:'访问令牌',t:'text',d:'留空则无认证'},
+  ]},
+];
+
 function toggleTheme() {
-  const root = document.documentElement;
-  if (root.getAttribute('data-theme') === 'dark') {
-    root.removeAttribute('data-theme'); localStorage.setItem('maikb_theme','light');
-    document.getElementById('themeBtn').textContent = '🌙';
-  } else {
-    root.setAttribute('data-theme','dark'); localStorage.setItem('maikb_theme','dark');
-    document.getElementById('themeBtn').textContent = '☀️';
-  }
+  const r = document.documentElement;
+  if (r.getAttribute('data-theme') === 'dark') { r.removeAttribute('data-theme'); localStorage.setItem('maikb_theme','light'); document.getElementById('themeBtn').textContent = '深色'; }
+  else { r.setAttribute('data-theme','dark'); localStorage.setItem('maikb_theme','dark'); document.getElementById('themeBtn').textContent = '浅色'; }
 }
-
-function saveToken() {
-  savedToken = document.getElementById('tokenInput').value.trim();
-  localStorage.setItem('maikb_token', savedToken);
-  toast('Token 已保存', 'success');
-  refreshAll();
-}
-
-function headers() {
-  const h = {'Content-Type': 'application/json'};
-  if (savedToken) h['Authorization'] = 'Bearer ' + savedToken;
-  return h;
-}
-
+function saveToken() { token = document.getElementById('tokenInput').value.trim(); localStorage.setItem('maikb_token', token); toast('Token 已保存', 'success'); refreshAll(); }
+function hdr() { const h = {'Content-Type':'application/json'}; if (token) h['Authorization'] = 'Bearer ' + token; return h; }
 async function api(path, opts = {}) {
-  const resp = await fetch(path, {...opts, headers: {...headers(), ...(opts.headers || {})}});
-  if (!resp.ok) {
-    let msg = resp.status + ' ' + resp.statusText;
-    try { const j = await resp.json(); msg = j.detail || msg; } catch (e) {}
-    throw new Error(msg);
-  }
+  const resp = await fetch(path, {...opts, headers: {...hdr(), ...(opts.headers||{})}});
+  if (!resp.ok) { let m = resp.status + ' ' + resp.statusText; try { const j = await resp.json(); m = j.detail || m; } catch(e){} throw new Error(m); }
   return resp.json();
 }
-
-function toast(msg, type = '') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast show ' + type;
-  setTimeout(() => el.className = 'toast', 3000);
-}
-
+function toast(msg, type = 'info') { const el = document.getElementById('toast'); el.textContent = msg; el.className = 'toast show ' + type; setTimeout(() => el.className = 'toast', 2500); }
+function esc(s) { return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function switchTab(btn, name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('[id^=panel-]').forEach(p => p.style.display = 'none');
@@ -793,180 +775,153 @@ function switchTab(btn, name) {
   if (name === 'files') { loadCategories(); loadFiles(); }
   if (name === 'config') loadConfig();
 }
-
 function refreshAll() { loadStats(); }
 
 async function loadStats() {
   try {
     const s = await api('/api/stats');
-    document.getElementById('statsContent').innerHTML = `
-      <div class="stat-card"><div class="label">文件总数</div><div class="value">${s.files_total}</div></div>
-      <div class="stat-card"><div class="label">成功导入</div><div class="value" style="color:var(--ok)">${s.files_ready}</div></div>
-      <div class="stat-card"><div class="label">失败</div><div class="value" style="color:var(--danger)">${s.files_failed}</div></div>
-      <div class="stat-card"><div class="label">总 chunks</div><div class="value">${s.chunks_total}</div></div>
-      <div class="stat-card"><div class="label">总 tokens</div><div class="value">${s.tokens_total}</div></div>
-      <div class="stat-card"><div class="label">总大小</div><div class="value">${s.size_human}</div></div>
-      <div class="stat-card"><div class="label">内存索引</div><div class="value">${s.vector_index_size}</div></div>
-      <div class="stat-card"><div class="label">Embedding</div><div class="value" style="font-size:14px">${s.embedding_model || '-'}<span class="unit">${s.embedding_dimension}d</span></div></div>
-    `;
-  } catch (e) {
-    document.getElementById('statsContent').innerHTML = '<div class="stat-card" style="grid-column:1/-1">加载失败: ' + e.message + '</div>';
-  }
+    document.getElementById('statsContent').innerHTML = [
+      ['文件总数', s.files_total, ''],
+      ['成功导入', s.files_ready, ''],
+      ['失败', s.files_failed, ''],
+      ['总切片', s.chunks_total, ''],
+      ['总 Tokens', s.tokens_total, ''],
+      ['总大小', s.size_human, ''],
+      ['内存索引', s.vector_index_size, ''],
+      ['Embedding', s.embedding_model || '-', s.embedding_dimension + 'd'],
+    ].map(r => `<div class="stat"><div class="l">${r[0]}</div><div class="v">${r[1]}${r[2]?'<span class="u">'+r[2]+'</span>':''}</div></div>`).join('');
+  } catch(e) { document.getElementById('statsContent').innerHTML = '<div class="stat" style="grid-column:1/-1;color:var(--danger)">加载失败: ' + esc(e.message) + '</div>'; }
 }
 
 async function ingest(force) {
-  if (force && !confirm('确认要强制全量重建？这可能需要较长时间。')) return;
-  toast(force ? '开始全量重建...' : '开始增量导入...');
+  if (force && !confirm('确认全量重建？可能需要较长时间。')) return;
+  toast(force ? '全量重建中...' : '增量导入中...');
   try {
-    const r = await api('/api/' + (force ? 'rebuild' : 'ingest'), {method: 'POST', body: JSON.stringify({force_rebuild: force})});
-    toast('完成: new=' + r.new + ' updated=' + r.updated + ' unchanged=' + r.unchanged + ' failed=' + r.failed + ' chunks=' + r.chunks, 'success');
+    const r = await api('/api/' + (force ? 'rebuild' : 'ingest'), {method:'POST', body:JSON.stringify({force_rebuild:force})});
+    toast('完成: new=' + r.new + ' updated=' + r.updated + ' unchanged=' + r.unchanged + ' failed=' + r.failed, 'success');
     loadStats();
-  } catch (e) { toast('失败: ' + e.message, 'error'); }
+  } catch(e) { toast('失败: ' + e.message, 'error'); }
 }
 
 async function loadCategories() {
-  try {
-    const r = await api('/api/categories');
-    const sel = document.getElementById('fileCategoryFilter');
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">全部分类</option>' + r.categories.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
-    sel.value = cur;
-  } catch (e) {}
+  try { const r = await api('/api/categories'); const sel = document.getElementById('fileCategoryFilter'); const cur = sel.value; sel.innerHTML = '<option value="">全部分类</option>' + r.categories.map(c => '<option value="'+esc(c)+'">'+esc(c)+'</option>').join(''); sel.value = cur; } catch(e) {}
 }
 
 async function loadFiles() {
-  const status = document.getElementById('fileStatusFilter').value;
-  const category = document.getElementById('fileCategoryFilter').value;
+  const st = document.getElementById('fileStatusFilter').value;
+  const cat = document.getElementById('fileCategoryFilter').value;
   const filter = document.getElementById('fileFilter').value.toLowerCase();
   const params = new URLSearchParams();
-  if (status) params.set('status', status);
-  if (category) params.set('category', category);
+  if (st) params.set('status', st);
+  if (cat) params.set('category', cat);
   try {
     const r = await api('/api/files' + (params.toString() ? '?' + params.toString() : ''));
     let items = r.items;
-    if (filter) items = items.filter(f => (f.file_name || '').toLowerCase().includes(filter));
-    if (items.length === 0) {
-      document.getElementById('filesTable').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted)">无文件</td></tr>';
-      return;
-    }
-    document.getElementById('filesTable').innerHTML = items.map(f => `
-      <tr>
-        <td title="${esc(f.file_path)}">${esc(f.file_name)}<div class="muted">${esc(f.title || '')}</div></td>
-        <td>${f.category ? '<span class="cat-badge">' + esc(f.category) + '</span>' : '<span class="muted">-</span>'}</td>
-        <td><span class="status-badge status-${esc(f.status)}">${esc(f.status)}</span></td>
-        <td>${f.chunk_count}</td>
-        <td>${f.total_tokens}</td>
-        <td>${f.size_human}</td>
-        <td class="muted">${f.last_ingested_at ? new Date(f.last_ingested_at).toLocaleString() : '-'}</td>
-        <td>
-          <button class="btn btn-sm" onclick="viewChunks('${esc(f.file_id)}')">切片</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteFile('${esc(f.file_id)}','${esc(f.file_name)}')" style="margin-left:4px">删除</button>
-        </td>
-      </tr>
-    `).join('');
-  } catch (e) {
-    document.getElementById('filesTable').innerHTML = '<tr><td colspan="8" style="color:var(--danger)">加载失败: ' + esc(e.message) + '</td></tr>';
-  }
+    if (filter) items = items.filter(f => (f.file_name||'').toLowerCase().includes(filter));
+    if (!items.length) { document.getElementById('filesTable').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--text-3)">无文件</td></tr>'; return; }
+    document.getElementById('filesTable').innerHTML = items.map(f => `<tr>
+      <td title="${esc(f.file_path)}">${esc(f.file_name)}<div class="muted">${esc(f.title||'')}</div></td>
+      <td>${f.category?'<span class="badge b-cat">'+esc(f.category)+'</span>':'<span class="muted">-</span>'}</td>
+      <td><span class="badge b-${esc(f.status)}">${esc(f.status)}</span></td>
+      <td>${f.chunk_count}</td><td>${f.total_tokens}</td><td>${f.size_human}</td>
+      <td class="muted">${f.last_ingested_at?new Date(f.last_ingested_at).toLocaleString():'-'}</td>
+      <td><button class="btn btn-sm" onclick="viewChunks('${esc(f.file_id)}')">切片</button> <button class="btn btn-sm btn-danger" onclick="deleteFile('${esc(f.file_id)}','${esc(f.file_name)}')">删除</button></td>
+    </tr>`).join('');
+  } catch(e) { document.getElementById('filesTable').innerHTML = '<tr><td colspan="8" style="color:var(--danger)">' + esc(e.message) + '</td></tr>'; }
 }
 
-async function viewChunks(fileId) {
+async function viewChunks(id) {
   try {
-    const r = await api('/api/files/' + fileId + '/chunks');
+    const r = await api('/api/files/' + id + '/chunks');
     document.getElementById('modalTitle').textContent = '切片详情（' + r.count + ' 个）';
-    let html = '<p class="muted" style="margin-bottom:12px">' + esc(r.file_path) + '</p>';
-    if (r.count === 0) {
-      html += '<p class="muted">无切片</p>';
-    } else {
-      r.items.forEach(c => {
-        html += `
-          <div class="hit-card">
-            <div class="hit-header">
-              <span class="hit-title">#${c.chunk_index} ${esc(c.heading || '')}</span>
-              <span>${c.char_count} chars / ${c.token_count} tokens ${c.has_embedding ? '✓ embedded' : '⚠ no embedding'}</span>
-            </div>
-            <div class="muted" style="margin-bottom:6px">${esc((c.title_path || []).join(' > '))}</div>
-            <div class="hit-content">${esc(c.content)}</div>
-          </div>`;
-      });
-    }
+    let html = '<p class="muted" style="margin-bottom:10px">' + esc(r.file_path) + '</p>';
+    if (!r.count) html += '<p class="muted">无切片</p>';
+    else r.items.forEach(c => { html += `<div class="result"><div class="r-head"><span class="r-title">#${c.chunk_index} ${esc(c.heading||'')}</span><span class="r-meta">${c.char_count} chars / ${c.token_count} tokens ${c.has_embedding?'✓':'⚠'}</span></div><div class="muted" style="margin-bottom:4px">${esc((c.title_path||[]).join(' > '))}</div><div class="r-body">${esc(c.content)}</div></div>`; });
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('chunkModal').classList.add('show');
-  } catch (e) { toast('加载切片失败: ' + e.message, 'error'); }
+  } catch(e) { toast('加载失败: ' + e.message, 'error'); }
 }
-
 function closeModal() { document.getElementById('chunkModal').classList.remove('show'); }
 
-async function deleteFile(fileId, name) {
-  if (!confirm('确认删除文件 "' + name + '" 及其所有切片？此操作不可撤销。')) return;
-  try {
-    await api('/api/files/' + fileId, {method: 'DELETE'});
-    toast('已删除: ' + name, 'success');
-    loadFiles(); loadStats();
-  } catch (e) { toast('删除失败: ' + e.message, 'error'); }
+async function deleteFile(id, name) {
+  if (!confirm('删除文件 "' + name + '" 及其所有切片？')) return;
+  try { await api('/api/files/' + id, {method:'DELETE'}); toast('已删除: ' + name, 'success'); loadFiles(); loadStats(); } catch(e) { toast('删除失败: ' + e.message, 'error'); }
 }
 
 async function uploadFile(event) {
-  const input = event.target;
-  if (!input.files || input.files.length === 0) return;
-  const file = input.files[0];
-  const formData = new FormData();
-  formData.append('file', file);
+  const input = event.target; if (!input.files.length) return;
+  const file = input.files[0]; const fd = new FormData(); fd.append('file', file);
   toast('上传中: ' + file.name + '...');
   try {
-    const resp = await fetch('/api/upload', {method: 'POST', headers: savedToken ? {'Authorization': 'Bearer ' + savedToken} : {}, body: formData});
-    if (!resp.ok) {
-      let msg = resp.status; try { msg = (await resp.json()).detail || msg; } catch (e) {}
-      throw new Error(msg);
-    }
+    const resp = await fetch('/api/upload', {method:'POST', headers: token ? {'Authorization':'Bearer '+token} : {}, body: fd});
+    if (!resp.ok) { let m = resp.status; try { m = (await resp.json()).detail || m; } catch(e){} throw new Error(m); }
     const r = await resp.json();
     toast('上传成功: ' + r.saved_as, 'success');
     loadFiles(); loadStats(); loadCategories();
-  } catch (e) { toast('上传失败: ' + e.message, 'error'); }
+  } catch(e) { toast('上传失败: ' + e.message, 'error'); }
   input.value = '';
 }
-
-function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 async function doSearch() {
   const q = document.getElementById('searchQuery').value.trim();
   if (!q) { toast('请输入查询', 'error'); return; }
   const mode = document.getElementById('searchMode').value;
   const topK = parseInt(document.getElementById('searchTopK').value);
-  const useVector = mode !== 'bm25';
-  const useBM25 = mode !== 'vector';
-  document.getElementById('searchResults').innerHTML = '<div class="loading"><div class="spinner"></div>检索中...</div>';
+  document.getElementById('searchResults').innerHTML = '<div class="loading"><div class="spinner"></div>检索中</div>';
   try {
-    const r = await api('/api/search', {method: 'POST', body: JSON.stringify({query: q, top_k: topK, use_vector: useVector, use_bm25: useBM25})});
-    if (r.count === 0) { document.getElementById('searchResults').innerHTML = '<p style="text-align:center;padding:20px;color:var(--text-muted)">未找到相关结果</p>'; return; }
-    document.getElementById('searchResults').innerHTML = r.items.map(h => `
-      <div class="hit-card">
-        <div class="hit-header">
-          <span class="hit-title">${esc(h.heading || (h.title_path || []).join(' > ') || '-')}</span>
-          <span class="hit-scores">score=${h.score.toFixed(4)} vec=${h.vector_score.toFixed(3)} bm25=${h.bm25_score.toFixed(3)}</span>
-        </div>
-        <div class="muted" style="margin-bottom:6px">来源: ${esc(h.source_name || '-')} | ${esc((h.title_path || []).join(' > '))}</div>
-        <div class="hit-content">${esc(h.content)}</div>
-      </div>`).join('');
-  } catch (e) {
-    document.getElementById('searchResults').innerHTML = '<p style="color:var(--danger)">检索失败: ' + esc(e.message) + '</p>';
-  }
+    const r = await api('/api/search', {method:'POST', body:JSON.stringify({query:q, top_k:topK, use_vector:mode!=='bm25', use_bm25:mode!=='vector'})});
+    if (!r.count) { document.getElementById('searchResults').innerHTML = '<p style="text-align:center;padding:16px;color:var(--text-3)">未找到相关结果</p>'; return; }
+    document.getElementById('searchResults').innerHTML = r.items.map(h => `<div class="result">
+      <div class="r-head"><span class="r-title">${esc(h.heading||(h.title_path||[]).join(' > ')||'-')}</span><span class="r-scores">score=${h.score.toFixed(4)} vec=${h.vector_score.toFixed(3)} bm25=${h.bm25_score.toFixed(3)}</span></div>
+      <div class="r-meta">来源: ${esc(h.source_name||'-')} | ${esc((h.title_path||[]).join(' > '))}</div>
+      <div class="r-body" style="margin-top:6px">${esc(h.content)}</div>
+    </div>`).join('');
+  } catch(e) { document.getElementById('searchResults').innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>'; }
 }
 
 async function loadConfig() {
   try {
     const c = await api('/api/config');
-    document.getElementById('configEditor').value = JSON.stringify(c, null, 2);
-  } catch (e) { document.getElementById('configEditor').value = '加载失败: ' + e.message; }
+    let html = '';
+    cfgSchema.forEach(sec => {
+      html += '<div class="form-sec"><div class="form-sec-title">' + esc(sec.l) + '</div>';
+      sec.fields.forEach(f => {
+        const val = (c[sec.s] || {})[f.k];
+        const id = 'cfg_' + sec.s + '_' + f.k;
+        if (f.t === 'bool') {
+          html += `<div class="form-row"><label>${esc(f.l)}</label><input type="checkbox" id="${id}" ${val?'checked':''}><span class="desc">${esc(f.d||'')}</span></div>`;
+        } else if (f.t === 'select') {
+          html += `<div class="form-row"><label>${esc(f.l)}</label><select id="${id}">${f.opts.map(o=>'<option value="'+o[0]+'"'+(val===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')}</select><span class="desc">${esc(f.d||'')}</span></div>`;
+        } else if (f.t === 'list') {
+          html += `<div class="form-row"><label>${esc(f.l)}</label><input type="text" id="${id}" value="${esc(Array.isArray(val)?val.join(', '):val||'')}"${f.ro?' class="ro" readonly':''}><span class="desc">${esc(f.d||'')}</span></div>`;
+        } else {
+          html += `<div class="form-row"><label>${esc(f.l)}</label><input type="${f.t==='int'||f.t==='float'?'number':'text'}" id="${id}" value="${esc(val ?? '')}"${f.t==='int'?' step="1"':''}${f.t==='float'?' step="0.01"':''}${f.ro?' class="ro" readonly':''}><span class="desc">${esc(f.d||'')}</span></div>`;
+        }
+      });
+      html += '</div>';
+    });
+    document.getElementById('configForm').innerHTML = html;
+  } catch(e) { document.getElementById('configForm').innerHTML = '<p style="color:var(--danger)">加载失败: ' + esc(e.message) + '</p>'; }
 }
 
 async function saveConfig() {
-  const text = document.getElementById('configEditor').value;
-  let config;
-  try { config = JSON.parse(text); } catch (e) { toast('JSON 格式错误: ' + e.message, 'error'); return; }
+  const config = {};
+  cfgSchema.forEach(sec => {
+    config[sec.s] = {};
+    sec.fields.forEach(f => {
+      const el = document.getElementById('cfg_' + sec.s + '_' + f.k);
+      if (!el) return;
+      if (f.t === 'bool') config[sec.s][f.k] = el.checked;
+      else if (f.t === 'int') config[sec.s][f.k] = parseInt(el.value) || 0;
+      else if (f.t === 'float') config[sec.s][f.k] = parseFloat(el.value) || 0;
+      else if (f.t === 'list') config[sec.s][f.k] = el.value.split(',').map(s=>s.trim()).filter(Boolean);
+      else config[sec.s][f.k] = el.value;
+    });
+  });
   try {
-    await api('/api/config', {method: 'PUT', body: JSON.stringify({config: config})});
+    await api('/api/config', {method:'PUT', body:JSON.stringify({config})});
     toast('配置已保存，插件将热重载', 'success');
-  } catch (e) { toast('保存失败: ' + e.message, 'error'); }
+  } catch(e) { toast('保存失败: ' + e.message, 'error'); }
 }
 </script>
 </body>
