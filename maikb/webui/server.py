@@ -327,6 +327,7 @@ class WebServer:
     async def _handle_delete_file(self, file_id: str) -> dict:
         """删除文件及其 chunks、FTS、内存向量索引。"""
 
+        from .. import get_db
         from ..kb.api import _kb_vector_index
 
         db = get_db()
