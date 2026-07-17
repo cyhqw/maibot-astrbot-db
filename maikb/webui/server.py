@@ -80,6 +80,9 @@ class WebServer:
         self._app: Optional[FastAPI] = None
         self._server: Any = None  # uvicorn.Server
         self._task: Optional[asyncio.Task] = None
+        # 后台任务进度跟踪
+        # key: task_id, value: {status, total, done, current_file, message, error}
+        self._progress: dict[str, dict] = {}
 
     async def start(self) -> None:
         """启动 server。"""
@@ -217,6 +220,10 @@ class WebServer:
         @app.put("/api/config", dependencies=[Depends(verify_token)])
         async def update_config(req: ConfigUpdateRequest) -> dict:
             return await self._handle_update_config(req.config)
+
+        @app.get("/api/progress", dependencies=[Depends(verify_token)])
+        async def progress() -> dict:
+            return await self._handle_progress()
 
         return app
 
@@ -426,14 +433,109 @@ class WebServer:
             ],
         }
 
+    async def _handle_progress(self) -> dict:
+        """返回当前后台任务进度。"""
+
+        return {"tasks": self._progress}
+
+    def _new_task(self, kind: str) -> str:
+        """创建一个进度跟踪任务，返回 task_id。"""
+
+        import uuid
+
+        task_id = uuid.uuid4().hex[:8]
+        self._progress[task_id] = {
+            "kind": kind,
+            "status": "pending",
+            "total": 0,
+            "done": 0,
+            "current_file": "",
+            "message": "",
+            "error": "",
+        }
+        return task_id
+
+    def _update_task(self, task_id: str, **kwargs) -> None:
+        """更新任务进度。"""
+
+        if task_id in self._progress:
+            self._progress[task_id].update(kwargs)
+
+    def _finish_task(self, task_id: str, message: str = "", error: str = "") -> None:
+        """标记任务完成。"""
+
+        if task_id in self._progress:
+            self._progress[task_id]["status"] = "error" if error else "done"
+            self._progress[task_id]["message"] = message
+            self._progress[task_id]["error"] = error
+            self._progress[task_id]["current_file"] = ""
+
+    def _cleanup_old_tasks(self) -> None:
+        """清理 5 分钟前完成的任务。"""
+
+        import time
+
+        now = time.time()
+        expired = [
+            tid
+            for tid, t in self._progress.items()
+            if t.get("status") in ("done", "error") and t.get("_ts", 0) < now - 300
+        ]
+        for tid in expired:
+            del self._progress[tid]
+
     async def _handle_ingest(self, req: IngestRequest) -> dict:
         from ..kb.api import _kb_importer
 
         if _kb_importer is None:
             raise HTTPException(status_code=503, detail="KB module not initialized")
 
-        result = await _kb_importer.ingest_directory(force_rebuild=req.force_rebuild)
-        return {"success": True, **result.to_dict()}
+        task_id = self._new_task("ingest")
+        self._update_task(task_id, status="running")
+
+        try:
+            # 先扫描获取文件列表用于进度
+            files: list = []
+            from pathlib import Path
+            kb_dir = Path(_kb_importer._knowledge_dir)
+            if kb_dir.exists():
+                from ..kb.importer import SUPPORTED_EXTENSIONS
+                for ext in SUPPORTED_EXTENSIONS:
+                    files.extend(kb_dir.rglob(f"*{ext}"))
+                files.sort()
+
+            self._update_task(task_id, total=len(files), message=f"扫描到 {len(files)} 个文件")
+
+            # 逐文件导入并更新进度
+            result_new, result_updated, result_unchanged, result_failed = 0, 0, 0, 0
+            result_failures: list = []
+            for i, fp in enumerate(files):
+                self._update_task(task_id, done=i, current_file=fp.name, message=f"导入中 ({i+1}/{len(files)})")
+                try:
+                    status = await _kb_importer.ingest_file(fp, force_rebuild=req.force_rebuild)
+                    if status == "new": result_new += 1
+                    elif status == "updated": result_updated += 1
+                    else: result_unchanged += 1
+                except Exception as exc:
+                    result_failed += 1
+                    result_failures.append((str(fp), str(exc)))
+
+            from ..kb.importer import IngestResult
+            result = IngestResult()
+            result.scanned = len(files)
+            result.new = result_new
+            result.updated = result_updated
+            result.unchanged = result_unchanged
+            result.failed = result_failed
+            result.failures = result_failures
+            all_files = await _kb_importer._db.list_kb_files(status="ready")
+            result.chunks = sum(f.chunk_count for f in all_files)
+
+            self._finish_task(task_id, message=f"完成: new={result_new} updated={result_updated} failed={result_failed}")
+            return {"success": True, "task_id": task_id, **result.to_dict()}
+        except Exception as exc:
+            self._finish_task(task_id, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
 
     async def _handle_rebuild(self) -> dict:
         from ..kb.api import _kb_importer
@@ -441,8 +543,16 @@ class WebServer:
         if _kb_importer is None:
             raise HTTPException(status_code=503, detail="KB module not initialized")
 
-        result = await _kb_importer.ingest_directory(force_rebuild=True)
-        return {"success": True, **result.to_dict()}
+        task_id = self._new_task("rebuild")
+        self._update_task(task_id, status="running", message="全量重建中...")
+
+        try:
+            result = await _kb_importer.ingest_directory(force_rebuild=True)
+            self._finish_task(task_id, message=f"完成: new={result.new} updated={result.updated} failed={result.failed}")
+            return {"success": True, "task_id": task_id, **result.to_dict()}
+        except Exception as exc:
+            self._finish_task(task_id, error=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc))
 
     async def _handle_get_config(self) -> dict:
         """读取插件配置。
@@ -618,6 +728,13 @@ tr:hover td { background: var(--surface-2); }
 .form-row input[type=checkbox] { width: 16px; height: 16px; }
 .form-row .desc { font-size: 11px; color: var(--text-3); }
 .form-row .ro { background: var(--surface-2); color: var(--text-3); }
+.progress-bar { width: 100%; height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
+.progress-task { background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 10px 14px; margin-bottom: 8px; }
+.progress-task .pct { font-size: 13px; font-weight: 500; }
+.progress-task .pfile { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.progress-task.done .pct { color: var(--ok); }
+.progress-task.error .pct { color: var(--danger); }
 </style>
 </head>
 <body>
@@ -646,6 +763,7 @@ tr:hover td { background: var(--surface-2); }
   <div id="panel-stats" class="panel">
     <div class="panel-title">知识库概览</div>
     <div id="statsContent" class="stats"><div class="loading"><div class="spinner"></div>加载中</div></div>
+    <div id="progressArea" style="display:none;margin-top:16px"></div>
     <div style="margin-top:16px;display:flex;gap:8px">
       <button class="btn" onclick="ingest(false)">扫描目录导入新文件</button>
       <button class="btn btn-danger" onclick="ingest(true)">全量重建</button>
@@ -777,7 +895,31 @@ function switchTab(btn, name) {
   if (name === 'files') { loadCategories(); loadFiles(); }
   if (name === 'config') loadConfig();
 }
-function refreshAll() { loadStats(); }
+function refreshAll() { loadStats(); pollProgress(); }
+
+let _progressTimer = null;
+async function pollProgress() {
+  try {
+    const r = await api('/api/progress');
+    const area = document.getElementById('progressArea');
+    const tasks = Object.entries(r.tasks || {});
+    const active = tasks.filter(([_, t]) => t.status === 'running' || t.status === 'pending');
+    if (tasks.length === 0) { area.style.display = 'none'; if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; } return; }
+    area.style.display = 'block';
+    area.innerHTML = tasks.map(([id, t]) => {
+      const pct = t.total > 0 ? Math.round(t.done / t.total * 100) : 0;
+      const kind_label = t.kind === 'ingest' ? '扫描导入' : t.kind === 'rebuild' ? '全量重建' : t.kind;
+      let status_icon = t.status === 'running' ? '' : t.status === 'done' ? ' ✓' : ' ✗';
+      return `<div class="progress-task ${esc(t.status)}">
+        <div class="pct">${esc(kind_label)}${status_icon} ${pct}% ${esc(t.message||'')}</div>
+        ${t.current_file ? '<div class="pfile">'+esc(t.current_file)+'</div>' : ''}
+        ${t.status === 'running' ? '<div class="progress-bar" style="margin-top:6px"><div class="progress-fill" style="width:'+pct+'%"></div></div>' : ''}
+      </div>`;
+    }).join('');
+    if (active.length > 0 && !_progressTimer) { _progressTimer = setInterval(pollProgress, 1000); }
+    if (active.length === 0 && _progressTimer) { clearInterval(_progressTimer); _progressTimer = null; setTimeout(loadStats, 500); }
+  } catch(e) {}
+}
 
 async function loadStats() {
   try {
@@ -790,19 +932,20 @@ async function loadStats() {
       ['总 Tokens', s.tokens_total, ''],
       ['总大小', s.size_human, ''],
       ['内存索引', s.vector_index_size, ''],
-      ['Embedding', s.embedding_model || '-', s.embedding_dimension + 'd'],
+      ['Embedding', s.embedding_model || '-', ''],
     ].map(r => `<div class="stat"><div class="l">${r[0]}</div><div class="v">${r[1]}${r[2]?'<span class="u">'+r[2]+'</span>':''}</div></div>`).join('');
   } catch(e) { document.getElementById('statsContent').innerHTML = '<div class="stat" style="grid-column:1/-1;color:var(--danger)">加载失败: ' + esc(e.message) + '</div>'; }
 }
 
 async function ingest(force) {
   if (force && !confirm('确认全量重建？可能需要较长时间。')) return;
-  toast(force ? '全量重建中...' : '增量导入中...');
+  toast(force ? '全量重建中...' : '扫描导入中...');
+  pollProgress();
   try {
     const r = await api('/api/' + (force ? 'rebuild' : 'ingest'), {method:'POST', body:JSON.stringify({force_rebuild:force})});
     toast('完成: new=' + r.new + ' updated=' + r.updated + ' unchanged=' + r.unchanged + ' failed=' + r.failed, 'success');
-    loadStats();
-  } catch(e) { toast('失败: ' + e.message, 'error'); }
+    loadStats(); pollProgress();
+  } catch(e) { toast('失败: ' + e.message, 'error'); pollProgress(); }
 }
 
 async function loadCategories() {
