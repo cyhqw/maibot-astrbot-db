@@ -437,7 +437,10 @@ class KbApiMixin:
         top_k: int = 5,
         **_: Any,
     ) -> dict[str, Any]:
-        """LLM 工具：检索知识库，返回格式化文本供 LLM 引用。"""
+        """LLM 工具：检索知识库，返回格式化文本供 LLM 引用。
+
+        会过滤掉相关度过低的结果，避免误导 LLM。
+        """
 
         if _kb_searcher is None:
             return {
@@ -455,13 +458,30 @@ class KbApiMixin:
                 "count": 0,
             }
 
+        # 过滤低相关度结果（与自动注入保持一致）
+        filtered = []
+        for h in hits:
+            # 向量相似度太低且 BM25 也没命中 → 确定不相关
+            if h.vector_score < 0.3 and h.bm25_score <= 0:
+                continue
+            # RRF 融合分数过低
+            if h.score < 0.01:
+                continue
+            filtered.append(h)
+
+        if not filtered:
+            return {
+                "content": f"知识库中存在内容，但未找到与 '{query}' 足够相关的条目",
+                "found": False,
+                "count": 0,
+            }
+
         # 格式化为 LLM 易读的文本
-        lines = [f"找到 {len(hits)} 条与 '{query}' 相关的知识：", ""]
-        for i, h in enumerate(hits, 1):
+        lines = [f"找到 {len(filtered)} 条与 '{query}' 相关的知识：", ""]
+        for i, h in enumerate(filtered, 1):
             source_path = " > ".join(h.title_path) if h.title_path else h.source_name or "未知来源"
             lines.append(f"### {i}. {h.heading or source_path}")
             lines.append(f"来源: {h.source_name or '未知'} | 章节: {source_path}")
-            lines.append(f"相关度: vector={h.vector_score:.3f} bm25={h.bm25_score:.3f}")
             lines.append("")
             lines.append(h.content)
             lines.append("")
@@ -471,8 +491,7 @@ class KbApiMixin:
         return {
             "content": "\n".join(lines),
             "found": True,
-            "count": len(hits),
-            "hits": [h.to_dict() for h in hits],
+            "count": len(filtered),
         }
 
 
