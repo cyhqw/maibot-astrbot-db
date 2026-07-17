@@ -329,3 +329,62 @@ async def test_empty_query_returns_empty(tmp_path, kb_dir):
     assert hits == []
 
     await close_db()
+
+
+def test_info_density_dialogue_vs_descriptive():
+    """信息密度：对话碎片应远低于描述性段落。"""
+
+    from maikb.kb.search import _info_density
+
+    dialogue = """- 哥伦比娅：……
+- 哥伦比娅：（又回到了这里…）
+- 哥伦比娅：（好沉…）
+- 哥伦比娅：……"""
+
+    descriptive = (
+        "哥伦比娅是愚人众第三席执行官，拥有极其强大的力量。"
+        "她性格温和慵懒，常显得昏昏欲睡，但实际隐藏着令人畏惧的实力。"
+        "在故事中她与桑多涅有着复杂的交集，试图在关键时刻提供帮助。"
+    )
+
+    d_score = _info_density(dialogue)
+    desc_score = _info_density(descriptive)
+    assert d_score < 0.4, f"对话碎片密度应低，实际 {d_score}"
+    assert desc_score > 0.7, f"描述段落密度应高，实际 {desc_score}"
+    assert desc_score > d_score * 2
+
+
+@pytest.mark.asyncio
+async def test_info_density_ranking(tmp_path, kb_dir):
+    """信息密度影响排序：描述性段落应排在对话碎片前面。"""
+
+    db_path = tmp_path / "test.db"
+    await init_db(db_path)
+    db = get_db()
+
+    # 同一文件里既有描述性段落又有对话碎片
+    (kb_dir / "test.md").write_text(
+        "# 哥伦比娅\n\n"
+        "## 描述\n\n"
+        "哥伦比娅是愚人众第三席执行官，拥有极其强大的力量。"
+        "她性格温和慵懒，常显得昏昏欲睡，但实际隐藏着令人畏惧的实力。"
+        "在故事中她与桑多涅有着复杂的交集，试图在关键时刻提供帮助。\n\n"
+        "## 独白\n\n"
+        "- 哥伦比娅：……\n"
+        "- 哥伦比娅：（又回到了这里…）\n"
+        "- 哥伦比娅：（好沉…）\n"
+        "- 哥伦比娅：……\n"
+    )
+
+    embedder = DummyEmbedder(dimension=64)
+    index = VectorIndex()
+    importer = KnowledgeBaseImporter(db, index, embedder, kb_dir)
+    await importer.ingest_directory()
+
+    searcher = HybridSearcher(db, index, embedder)
+    hits = await searcher.search(SearchQuery(query="哥伦比娅", top_k=2))
+    assert len(hits) >= 1
+    # 第一个结果应该是描述性段落，不是对话碎片
+    assert "执行官" in hits[0].content or "愚人众" in hits[0].content
+
+    await close_db()

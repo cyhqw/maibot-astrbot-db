@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -22,6 +23,51 @@ from .vector_store import VectorIndex
 
 
 logger = logging.getLogger("maikb.kb.search")
+
+# 省略号、单字符标点、纯对话标签等低信息量模式
+_ELLIPSIS_RE = re.compile(r"[…\.{2,}。、，！？；：""''（）()\[\]【】—\-]")
+_DIALOGUE_TAG_RE = re.compile(r"^[^：:]{1,10}[：:]")  # "角色名：" 开头的对话行
+
+
+def _info_density(content: str) -> float:
+    """计算 chunk 的信息密度分数（0.0 ~ 1.0）。
+
+    惩罚以下情况：
+    - 大量省略号/标点（"……" "。" 等）
+    - 短行对话碎片（"角色：……"）
+    - 实质文本占比低
+
+    用于对 RRF 分数加权，避免"角色名出现多次但内容空洞"的 chunk 被高估。
+    """
+
+    if not content or not content.strip():
+        return 0.0
+
+    total = len(content)
+    # 去掉标点和省略号后的实质字符数
+    meaningful = _ELLIPSIS_RE.sub("", content)
+    meaningful_chars = len(meaningful.strip())
+    if meaningful_chars == 0:
+        return 0.0
+
+    # 实质字符占比（基础分）
+    ratio = meaningful_chars / total
+
+    # 检查对话碎片密度：如果大部分行是 "角色名：短句" 格式，降低分数
+    lines = [l.strip() for l in content.split("\n") if l.strip()]
+    if lines:
+        dialogue_lines = sum(1 for l in lines if _DIALOGUE_TAG_RE.match(l))
+        dialogue_ratio = dialogue_lines / len(lines)
+        # 对话占比越高，信息密度越低（对话碎片通常是角色念台词，缺乏描述性信息）
+        ratio *= (1.0 - dialogue_ratio * 0.5)
+
+    # 检查省略号密度
+    ellipsis_count = content.count("…") + content.count("...")
+    if ellipsis_count > 0:
+        ellipsis_ratio = min(ellipsis_count / max(len(lines), 1), 1.0)
+        ratio *= (1.0 - ellipsis_ratio * 0.4)
+
+    return max(0.1, min(1.0, ratio))
 
 
 @dataclass
@@ -134,49 +180,56 @@ class HybridSearcher:
         if not fused:
             return []
 
-        # ---------- 取 top-N ----------
+        # ---------- 取 top-N（先多取一些，用信息密度重排）----------
         fused.sort(key=lambda x: x[1], reverse=True)
-        top_chunk_ids = [cid for cid, _ in fused[: q.top_k * 2]]  # 多取一些备过滤
+        top_chunk_ids = [cid for cid, _ in fused[: q.top_k * 3]]  # 多取一些备重排
 
         # ---------- 查完整 chunk ----------
         chunks = await self._db.get_chunks_by_ids(top_chunk_ids)
         chunk_map = {c.chunk_id: c for c in chunks}
 
-        # ---------- 过滤 ----------
-        # 应用 category / file_ids 过滤
-        # 需要查文件元数据
+        # ---------- 查文件元数据 ----------
         file_ids_needed = {c.file_id for c in chunks}
-        files_map: dict[str, str] = {}  # file_id → file_name
+        files_map: dict[str, str] = {}
         if file_ids_needed:
             for fid in file_ids_needed:
                 f = await self._db.get_kb_file_by_id(fid)
                 if f:
                     files_map[fid] = f.file_name
 
-        results: list[SearchHit] = []
-        for cid, score in fused:
+        # ---------- 信息密度加权 + 过滤 ----------
+        scored: list[tuple[str, float, float, float, float]] = []
+        for cid, rrf_score in fused:
             chunk = chunk_map.get(cid)
             if chunk is None:
                 continue
-
-            # 过滤
             if q.file_ids and chunk.file_id not in q.file_ids:
                 continue
             if q.category:
                 f = await self._db.get_kb_file_by_id(chunk.file_id)
                 if not f or f.category != q.category:
                     continue
-            if score < q.min_score:
+            if rrf_score < q.min_score:
                 continue
 
-            # 找向量/BM25 原始分数
             v_score = next((s for cid_, s in vector_hits if cid_ == cid), 0.0)
             b_score = next((s for cid_, s in bm25_hits if cid_ == cid), 0.0)
+            density = _info_density(chunk.content)
+            # 信息密度作为 RRF 分数的乘数：密度 1.0 不变，密度 0.3 打三折
+            adjusted_score = rrf_score * density
 
+            scored.append((cid, adjusted_score, v_score, b_score, density))
+
+        # 按加权后分数重新排序
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        results: list[SearchHit] = []
+        for cid, adj_score, v_score, b_score, density in scored:
+            chunk = chunk_map[cid]
             results.append(
                 SearchHit(
                     chunk_id=cid,
-                    score=score,
+                    score=adj_score,
                     content=chunk.content,
                     heading=chunk.heading or "",
                     title_path=chunk.title_path or [],
@@ -186,7 +239,6 @@ class HybridSearcher:
                     bm25_score=b_score,
                 )
             )
-
             if len(results) >= q.top_k:
                 break
 
