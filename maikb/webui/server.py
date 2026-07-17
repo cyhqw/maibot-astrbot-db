@@ -194,6 +194,10 @@ class WebServer:
         async def delete_file(file_id: str) -> dict:
             return await self._handle_delete_file(file_id)
 
+        @app.delete("/api/chunks/{chunk_id}", dependencies=[Depends(verify_token)])
+        async def delete_chunk(chunk_id: str) -> dict:
+            return await self._handle_delete_chunk(chunk_id)
+
         @app.get("/api/categories", dependencies=[Depends(verify_token)])
         async def categories() -> dict:
             return await self._handle_categories()
@@ -347,6 +351,30 @@ class WebServer:
                 _kb_vector_index.remove(cid)
 
         return {"success": True, "deleted_chunks": deleted}
+
+    async def _handle_delete_chunk(self, chunk_id: str) -> dict:
+        """删除单个 chunk：DB + FTS + 内存向量索引，并同步所属文件统计。"""
+
+        from .. import get_db
+        from ..kb.api import _kb_vector_index
+
+        db = get_db()
+        file_id = await db.delete_chunk_by_id(chunk_id)
+        if file_id is None:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+
+        if _kb_vector_index is not None:
+            _kb_vector_index.remove(chunk_id)
+
+        # 返回该文件剩余 chunk 数，便于前端刷新
+        f = await db.get_kb_file_by_id(file_id)
+        remaining = f.chunk_count if f else 0
+        return {
+            "success": True,
+            "chunk_id": chunk_id,
+            "file_id": file_id,
+            "remaining_chunks": remaining,
+        }
 
     async def _handle_categories(self) -> dict:
         """返回知识库中出现的所有 category（去重）。"""
@@ -642,7 +670,7 @@ def _to_toml_value(v: Any) -> Any:
 # 嵌入式 HTML 前端
 # ----------------------------------------------------------------------
 
-_INDEX_HTML = """<!DOCTYPE html>
+_INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -1132,12 +1160,31 @@ async function viewChunks(id) {
     document.getElementById('modalTitle').textContent = '切片详情（' + r.count + ' 个）';
     let html = '<p class="muted" style="margin-bottom:10px">' + esc(r.file_path) + '</p>';
     if (!r.count) html += '<p class="muted">无切片</p>';
-    else r.items.forEach(c => { html += `<div class="result"><div class="r-head"><span class="r-title">#${c.chunk_index} ${esc(c.heading||'')}</span><span class="r-meta">${c.char_count} chars / ${c.token_count} tokens ${c.has_embedding?'✓':'⚠'}</span></div><div class="muted" style="margin-bottom:4px">${esc((c.title_path||[]).join(' > '))}</div><div class="r-body">${esc(c.content)}</div></div>`; });
+    else r.items.forEach(c => { html += `<div class="result" id="chunk-${esc(c.chunk_id)}"><div class="r-head"><span class="r-title">#${c.chunk_index} ${esc(c.heading||'')}</span><span class="r-meta">${c.char_count} chars / ${c.token_count} tokens ${c.has_embedding?'✓':'⚠'}</span></div><div class="muted" style="margin-bottom:4px">${esc((c.title_path||[]).join(' > '))}</div><div class="r-body">${esc(c.content)}</div><div style="margin-top:8px;text-align:right"><button class="btn btn-sm btn-danger" onclick="deleteChunk('${esc(c.chunk_id)}')">删除此切片</button></div></div>`; });
     document.getElementById('modalBody').innerHTML = html;
     document.getElementById('chunkModal').classList.add('show');
   } catch(e) { toast('加载失败: ' + e.message, 'error'); }
 }
 function closeModal() { document.getElementById('chunkModal').classList.remove('show'); }
+
+async function deleteChunk(id) {
+  if (!confirm('删除该切片？此操作不可撤销，源文件不会被改动。')) return;
+  try {
+    const r = await api('/api/chunks/' + id, {method:'DELETE'});
+    toast('已删除切片（剩余 ' + r.remaining_chunks + ' 个）', 'success');
+    const card = document.getElementById('chunk-' + id);
+    if (card) card.remove();
+    // 标题里的数量也刷新一下
+    const titleEl = document.getElementById('modalTitle');
+    const m = titleEl.textContent.match(/（(\d+) 个）/);
+    if (m) {
+      const n = parseInt(m[1]) - 1;
+      titleEl.textContent = titleEl.textContent.replace(/（\d+ 个）/, '（' + n + ' 个）');
+    }
+    // 刷新统计
+    loadStats();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
+}
 
 async function deleteFile(id, name) {
   if (!confirm('删除文件 "' + name + '" 及其所有切片？')) return;
@@ -1188,12 +1235,24 @@ async function doSearch() {
   try {
     const r = await api('/api/search', {method:'POST', body:JSON.stringify(payload)});
     if (!r.count) { document.getElementById('searchResults').innerHTML = '<p style="text-align:center;padding:16px;color:var(--text-3)">未找到相关结果</p>'; return; }
-    document.getElementById('searchResults').innerHTML = r.items.map(h => `<div class="result">
+    document.getElementById('searchResults').innerHTML = r.items.map(h => `<div class="result" id="hit-${esc(h.chunk_id)}">
       <div class="r-head"><span class="r-title">${esc(h.heading||(h.title_path||[]).join(' > ')||'-')}</span><span class="r-scores">score=${h.score.toFixed(4)} vec=${h.vector_score.toFixed(3)} bm25=${h.bm25_score.toFixed(3)}</span></div>
       <div class="r-meta">来源: ${esc(h.source_name||'-')} | ${esc((h.title_path||[]).join(' > '))}</div>
       <div class="r-body" style="margin-top:6px">${esc(h.content)}</div>
+      <div style="margin-top:8px;text-align:right"><button class="btn btn-sm btn-danger" onclick="deleteSearchHit('${esc(h.chunk_id)}')">删除此切片</button></div>
     </div>`).join('');
   } catch(e) { document.getElementById('searchResults').innerHTML = '<p style="color:var(--danger)">' + esc(e.message) + '</p>'; }
+}
+
+async function deleteSearchHit(id) {
+  if (!confirm('删除该切片？此操作不可撤销，源文件不会被改动。')) return;
+  try {
+    const r = await api('/api/chunks/' + id, {method:'DELETE'});
+    toast('已删除切片（所属文件剩余 ' + r.remaining_chunks + ' 个）', 'success');
+    const card = document.getElementById('hit-' + id);
+    if (card) card.remove();
+    loadStats();
+  } catch(e) { toast('删除失败: ' + e.message, 'error'); }
 }
 
 async function loadConfig() {
